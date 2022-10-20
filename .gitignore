@@ -1,0 +1,7 @@
+
+script/.ipynb_checkpoints/ 
+*.pyc
+*.iml
+*.xml
+script/old/
+script/__pycache__/
