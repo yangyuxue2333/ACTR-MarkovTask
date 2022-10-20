@@ -35,7 +35,7 @@ REWARD = {'B1': 2,
           'B2': 0,
           'C1': 0,
           'C2': 2}
-PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':1}
+PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':.7}
 
 
 random.seed(0)
