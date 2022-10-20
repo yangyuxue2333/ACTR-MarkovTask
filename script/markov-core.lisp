@@ -97,9 +97,9 @@
          :model-warnings nil
          :v nil
          :trace-detail low
-         ;:ult t
+         :ult t
          ;:act t
-         :trace-filter production-firing-only
+         ;:trace-filter production-firing-only
          ;:pct t
          ;:blt t
          ;:reward-hook "detect-reward-hook"

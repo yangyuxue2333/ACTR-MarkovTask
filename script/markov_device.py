@@ -22,6 +22,7 @@ import time
 from datetime import datetime
 from functools import reduce
 import scipy.optimize as opt
+import itertools
 
 
 STATE = (0, 1, 2)
@@ -34,7 +35,7 @@ RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
 REWARD = {'B1': 2,
           'B2': 0,
           'C1': 0,
-          'C2': 2}
+          'C2': 0}
 PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':.7}
 
 
@@ -155,7 +156,13 @@ class MarkovState():
         self.state_frequency = None
         self.reward_frequency = None
 
+        ### ACTR TRACE
+        self.actr_chunk_trace = None
+        self.actr_production_trace = None
+
         self.state0()
+
+
 
     @property
     def state1_response_time(self):
@@ -224,6 +231,70 @@ class MarkovState():
         if REWARD[self.state2_selected_stimulus] == 0:
             self.reward_frequency = 'common'
         self.state = 3
+
+    # =================================================== #
+    # ACTR CHUNK TRACE INFO
+    # =================================================== #
+    @property
+    def actr_chunk_names(self):
+        """
+        return a list of DM chunk names
+        ['M1-1', 'M1-2'...]
+        """
+        res = []
+        for i in range(1, 5):
+            for j in range(1, 5):
+                res.append('M' + str(i) + '-' + str(j))
+        self._actr_chunk_names = res
+        return self._actr_chunk_names
+
+    @property
+    def actr_production_names(self):
+        """
+        return a list of production names
+        """
+        self._actr_production_names = ['CHOOSE-STATE1-LEFT', 'CHOOSE-STATE1-RIGHT', 'CHOOSE-STATE2-LEFT', 'CHOOSE-STATE2-RIGHT']
+        return self._actr_production_names
+
+    @staticmethod
+    def actr_production_parameter(production_name, parameter_name):
+        """
+        Extract the parameter value of a production during model running
+            NOTE: must be called during actr running
+        """
+        assert (production_name in actr.all_productions() and
+                parameter_name in [':u', ':utility', ':at', ':reward', ':fixed-utility'])
+        actr.hide_output()
+        value = actr.spp(production_name, parameter_name)[0][0]
+        actr.unhide_output()
+        return (production_name, parameter_name, value)
+
+    @staticmethod
+    def actr_chunk_parameter(chunk_name, parameter_name):
+        """
+        Extract the parameter value of a chunk during model running
+            NOTE: must be called during actr running
+        """
+        try:
+            actr.hide_output()
+            value = actr.sdp(chunk_name, parameter_name)[0][0]
+            actr.unhide_output()
+            return (chunk_name, parameter_name, value)
+        except:
+            print('ERROR: WRONG', chunk_name, parameter_name)
+
+    def get_actr_chunk_trace(self, parameter_name=':Last-Retrieval-Activation'):
+        """
+        Return a list chunk's info (e.g. ":Last-Retrieval-Activation", ":Activation"
+            NOTE: must be called during actr running
+        """
+        return [self.actr_chunk_parameter(c, parameter_name)[-1] for c in self.actr_chunk_names]
+
+    def get_actr_production_trace(self, parameter_name=':utility'):
+        """ Return a list chunk's info (e.g. ":Last-Retrieval-Activation", ":Activation"
+            NOTE: must be called during actr running
+        """
+        return [self.actr_production_parameter(p, parameter_name)[-1] for p in self.actr_production_names]
 
     def __str__(self):
         return "<[%s] \t[%s, %.2f]'%s' \t[%s, %.2f]'%s' \tR:[%s] \t[%s][%s]" % (
@@ -347,6 +418,11 @@ class MarkovACTR(MarkovState):
 
         # log
         if self.markov_state.state == 3:
+
+            # log actr trace
+            self.markov_state.actr_chunk_trace = self.markov_state.get_actr_chunk_trace(parameter_name=':Last-Retrieval-Activation')
+            self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(parameter_name=':utility')
+
             self.log.append(self.markov_state)
             if self.verbose: print(self.markov_state)
 
@@ -425,6 +501,9 @@ class MarkovACTR(MarkovState):
     # =================================================== #
 
     def df_behaviors(self):
+        """
+        Return model generated beh data
+        """
         rows = [[
             s.state1_response,
             s.state1_response_time,
@@ -485,21 +564,20 @@ class MarkovACTR(MarkovState):
             res = df.merge(df1, how='left').merge(df2, how='left').merge(df3, how='left').round(2)
         return res
 
-    # =================================================== #
-    # ACTR CHUNK INFO
-    # =================================================== #
-    def extract_chunk_parameter(self, chunk_name, parameter_name):
-        """
-        This function will extract the parameter value of a chunk during model running
-        """
-        try:
-            actr.hide_output()
-            value = actr.sdp(chunk_name, parameter_name)[0][0]
-            actr.unhide_output()
-            return (chunk_name, parameter_name, value)
-        except:
-            print('ERROR: WRONG', chunk_name, parameter_name)
 
+    def df_actr_chunk_traces(self, parameter_name=':Last-Retrieval-Activation'):
+        """
+        Return a chunk activation trace
+        """
+        df = pd.DataFrame([s.actr_chunk_trace for s in self.log], columns=self.actr_chunk_names).reset_index()
+        return pd.melt(df, id_vars='index', var_name='memory', value_name=parameter_name)
+
+    def df_actr_production_traces(self, parameter_name=':utility'):
+        """
+        Return a production utility trace
+        """
+        df = pd.DataFrame([s.actr_production_trace for s in self.log], columns=self.actr_production_names).reset_index()
+        return pd.melt(df, id_vars='index', var_name='action', value_name=parameter_name)
 
     def __str__(self):
         header = "######### SETUP MODEL " + self.model + " #########"
