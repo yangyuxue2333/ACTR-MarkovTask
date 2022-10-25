@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model1.lisp
-;;; Version     :v1.0
+;;; Version     :v1.1
 ;;;
 ;;; Description : model-free 
 ;;;
@@ -54,6 +54,8 @@
 ;;;   Agent makes response L or R 
 ;;; - In the end of each trial, a reward is delivered, encodes reward amount
 ;;; - stop the experiment "done"
+;;; - NOTE: to make model only look back one step, !eval! (trigger-reward 0) 
+;;;         is added when state2 is encoded
 ;;; 
 ;;; Chunk Type descriptions:
 ;;; - markov-stimulus: Contain the state information (0,1,2,3), left and right
@@ -121,7 +123,9 @@
 (chunk-type phase
       step
       stage
-      motivation)
+      motivation
+      plan-state1-selected-stimulus
+      plan-state2-selected-stimulus)
 
 ;;; --------- DM ---------
 (add-dm 
@@ -240,6 +244,7 @@
      state1-right-stimulus  =R
    
    !output! (in encode-state2 =L =R)
+    
 )
 
 (p encode-state2
@@ -277,6 +282,7 @@
      state2-right-stimulus  =R
    
    !output! (in encode-state2 =L =R)
+   !eval! (trigger-reward 0) ; CLEAR REWARD 
 )
 
 (p encode-state3

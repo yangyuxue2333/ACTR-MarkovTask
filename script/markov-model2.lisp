@@ -279,6 +279,10 @@
    ?imaginal>
      state free
    
+   =imaginal> 
+     state1-left-stimulus   =L1
+     state1-right-stimulus  =R1
+   
    =goal> 
      step       plan-retrieve
      stage      1
@@ -287,14 +291,17 @@
 ==>
    ;;; TODO: need to change based on reward policy
    +retrieval>
+     ;:recently-retrieved nil
      status process
      > reward 0
-     - state1-left-stimulus nil
-     - state1-right-stimulus nil
+     state1-left-stimulus   =L1
+     state1-right-stimulus  =R1
      - state2-left-stimulus nil
      - state2-right-stimulus nil
      - state1-selected-stimulus nil
      - state2-selected-stimulus nil
+   
+   =imaginal>
    
    =goal> 
      step       plan-decide
@@ -393,6 +400,7 @@
      state2-right-stimulus  =R
    
    !output! (in encode-state2 =L =R)
+   !eval! (trigger-reward 0) ; CLEAR REWARD 
 )
 
 
@@ -411,7 +419,11 @@
      state free
    
    =imaginal>
-    state1-selected-stimulus =RESPONSE
+    state1-left-stimulus  =S11
+    state1-right-stimulus =S12
+    state2-left-stimulus  =S21
+    state2-right-stimulus =S22
+    state1-selected-stimulus =R1
     state2-selected-stimulus nil
     
    
@@ -424,22 +436,21 @@
 ==>
    ;;; need to change based on reward policy
    +retrieval>
+     ;:recently-retrieved nil
      status process
-     > reward 0
-     - state1-left-stimulus nil
-     - state1-right-stimulus nil
-     - state2-left-stimulus nil
-     - state2-right-stimulus nil
-     - state1-selected-stimulus nil
-     - state2-selected-stimulus nil
-     state1-selected-stimulus =RESPONSE 
+     > reward 0 
+     state1-left-stimulus  =S11
+     state1-right-stimulus =S12
+     state2-left-stimulus  =S21
+     state2-right-stimulus =S22
+     state1-selected-stimulus =R1 
    
    =goal> 
      step       plan-decide
    
    =imaginal>
    
-   !output! (in plan-state2-retrieve() =RESPONSE)
+   !output! (in plan-state2-retrieve =S11 =S12 =S21 =S22 =R1)
      
 )
 
@@ -448,8 +459,8 @@
    Encode planed response in GOAL
    "
    ?retrieval>
-    state free
-    buffer full
+     state free
+     buffer full
    
    ?goal>
      state free
@@ -476,14 +487,19 @@
    !output! (in plan-state2-retrieve-success() S1 =RESPONSE1 S2 =RESPONSE2)
 )
 
-(p plan-state2-retrieve-failure
+(p plan-state2-retrieve-failure-left
    "Plan STATE2: failure
    Encode default response :LEFT
    "
    ?retrieval>
-      buffer   failure
-    
+     buffer failure
    
+   ?goal>
+     state free
+   
+   ?imaginal>
+     state free
+    
    =goal> 
      step       plan-decide
      - plan-state1-selected-stimulus nil
@@ -494,9 +510,34 @@
      step       respond
      plan-state2-selected-stimulus left
    
-   !output! (in plan-state2-retrieve-failure() )
+   !output! (in plan-state2-random-left() )
 )
 
+(p plan-state2-retrieve-failure-right
+   "Plan STATE2: failure
+   Encode default response :RIGHT
+   "
+   ?retrieval>
+     buffer failure
+   
+   ?goal>
+     state free
+   
+   ?imaginal>
+     state free
+    
+   =goal> 
+     step       plan-decide
+     - plan-state1-selected-stimulus nil
+     plan-state2-selected-stimulus nil
+==>
+   ; ENCODE PLANED OUTCOME IN GOAL 
+   =goal> 
+     step       respond
+     plan-state2-selected-stimulus right
+   
+   !output! (in plan-state2-random-right() )
+)
 
 ;;; ----------------------------------------------------------------
 ;;; RESPONSE SELECTION
@@ -749,6 +790,10 @@
 ==>
    =goal>
    
+   -imaginal> 
+   
+   -visual>
+   
    +retrieval> 
      status process
      state1-left-stimulus =S11
@@ -758,9 +803,7 @@
      state1-selected-stimulus =R1
      state2-selected-stimulus =R2
      reward =R
-   
-   -visual>
-   -imaginal>  
+    
    !output! (refresh-memory  =R1 =R2 =R)
 
 )
@@ -797,6 +840,28 @@
    -retrieval>
    
    !output! (refresh-memory-success)
+)
+
+(p refresh-memory-failure 
+    "If refreshed memory failed, clear retrieval buffer and reset goal buffer"
+   ?retrieval>
+     buffer failure
+     state free
+   
+   =goal>
+     isa      phase
+     step     retrieve 
+
+==>
+   ; RESET GOAL
+   =goal> 
+     step       attend-fixation 
+     plan-state1-selected-stimulus nil
+     plan-state2-selected-stimulus nil
+   
+   -retrieval>
+   
+   !output! (refresh-memory-fail)
 )
 
 

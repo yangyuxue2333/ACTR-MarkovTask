@@ -17,6 +17,7 @@ import actr
 import random
 import numpy as np
 import pandas as pd
+import pprint as p
 import json
 import time
 from datetime import datetime
@@ -37,6 +38,7 @@ REWARD = {'B1': 2,
           'C1': 0,
           'C2': 0}
 PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':.7}
+ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation']
 
 
 random.seed(0)
@@ -159,7 +161,6 @@ class MarkovState():
         ### ACTR TRACE
         self.actr_chunk_trace = None
         self.actr_production_trace = None
-
         self.state0()
 
 
@@ -275,13 +276,16 @@ class MarkovState():
         Extract the parameter value of a chunk during model running
             NOTE: must be called during actr running
         """
+        actr.hide_output()
         try:
-            actr.hide_output()
             value = actr.sdp(chunk_name, parameter_name)[0][0]
             actr.unhide_output()
-            return (chunk_name, parameter_name, value)
         except:
             print('ERROR: WRONG', chunk_name, parameter_name)
+            value = None
+        finally:
+            actr.unhide_output()
+            return (chunk_name, parameter_name, value)
 
     def get_actr_chunk_trace(self, parameter_name=':Last-Retrieval-Activation'):
         """
@@ -326,12 +330,21 @@ class MarkovACTR(MarkovState):
         # init markov state
         self.markov_state = None
 
-    def setup(self, model="markov-model1", actr_params=None, reload=True, verbose=False):
+        # init parameters
+        self.actr_parameters = {}
+        self.task_parameters = {}
+
+
+    def setup(self,
+              model="markov-model1",
+              actr_params=None,
+              task_params=None,
+              reload=True,
+              verbose=False):
         # TODO: add function to modify parameter set
         self.model = model
         self.verbose = verbose
-        self.actr_parameters = actr_params
-        self.task_parameters = PROBABILITY.copy()
+
 
         # init working dir
         curr_dir = os.path.dirname(os.path.realpath('__file__'))
@@ -348,12 +361,20 @@ class MarkovACTR(MarkovState):
             actr.load_act_r_model(os.path.join(curr_dir, model + ".lisp"))
             actr.load_act_r_model(os.path.join(curr_dir, "markov-memory.lisp"))
 
+
+        # init parameter sets
+        self.actr_parameters = self.get_default_actr_parameters()
+        self.task_parameters = self.get_default_task_parameters()
+        '''
+        # update parameter sets
+        self.set_actr_parameters(actr_params)
+        self.set_task_parameters(task_params)
+        '''
+
         window = actr.open_exp_window("MARKOV TASK", width=500, height=250, visible=False)
         self.window = window
 
         actr.install_device(window)
-
-
 
         if verbose: print(self.__str__())
 
@@ -420,7 +441,9 @@ class MarkovACTR(MarkovState):
         if self.markov_state.state == 3:
 
             # log actr trace
-            self.markov_state.actr_chunk_trace = self.markov_state.get_actr_chunk_trace(parameter_name=':Last-Retrieval-Activation')
+            self.markov_state.actr_chunk_trace = {':Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Activation'),
+                                                  ':Last-Retrieval-Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Last-Retrieval-Activation'),
+                                                  ':Reference-Count':self.markov_state.get_actr_chunk_trace(parameter_name=':Reference-Count')}
             self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(parameter_name=':utility')
 
             self.log.append(self.markov_state)
@@ -482,19 +505,92 @@ class MarkovACTR(MarkovState):
         """
 
         for i in range(n):
-            actr.schedule_event_relative(.01 + 10 * i, "markov-update-state0")
-            actr.schedule_event_relative(1 + 10 * i, "markov-update-state1")
+            actr.schedule_event_relative(.01 + 100 * i, "markov-update-state0")
+            actr.schedule_event_relative(1 + 100 * i, "markov-update-state1")
 
             self.index += 1
 
         # "done"
-        actr.schedule_event_relative(20 + 10 * i, "markov-update-end")
-        actr.run(30 + 10 * i)
+        actr.schedule_event_relative(80 + 100 * i, "markov-update-end")
+        actr.run(81 + 100 * i)
 
         # clear commands
         self.remove_actr_commands()
 
+    # =================================================== #
+    # PARAMETER SETUP
+    # =================================================== #
 
+    def get_actr_parameter(self, param_name):
+        """
+        get parameter from current model
+        :param keys: string, the parameter name (e.g. ans, bll, r1, r2)
+        :return:
+        """
+        assert param_name in ACTR_PARAMETER_NAMES
+        return actr.get_parameter_value(":" + param_name)
+
+    def get_actr_parameters(self, *kwargs):
+        param_set = {}
+        for param_name in kwargs:
+            param_set[param_name] = self.get_actr_parameter(param_name)
+        return param_set
+
+    def set_actr_parameters(self, kwargs):
+        """
+        set parameter to current model
+        :param kwargs: dict pair, indicating the parameter name and value (e.g. ans=0.1, r1=1, r2=-1)
+        :return:
+        """
+        # print("start assign set_parameters", kwargs)
+        # print('before', self.actr_parameters)
+        actr.hide_output()
+        update_parameters = self.actr_parameters.copy()
+        # if new para given
+        if kwargs:
+            update_parameters.update(kwargs)
+            for key, value in kwargs.items():
+                actr.set_parameter_value(':' + key, value)
+            self.actr_parameters = update_parameters
+
+        # if no new param given
+        else:
+            self.actr_parameters = self.get_default_actr_parameters()
+        # self.actr_parameters["seed"] = str(self.actr_parameters["seed"])
+        actr.unhide_output()
+        # print('after', self.actr_parameters)
+
+    def set_task_parameters(self, kwargs):
+        """
+        Set the task parameter
+             self.task_parameter = {'MARKOV_PROBABILITY': 0.7,
+                                    'REWARD_PROBABILITY': 0.7,
+                                    'REWARD': {'B1': 2, 'B2': 0, 'C1': 0, 'C2': 0}
+        If kwargs == None: return default parameters
+        """
+        # print('before', self.task_parameters)
+        new = self.task_parameters.copy()
+        # if new para given
+        if kwargs:
+            new.update(kwargs)
+            self.task_parameters = new
+        else:
+            self.task_parameters = self.get_default_task_parameters()
+        # print('after', self.task_parameters)
+
+
+    def get_default_actr_parameters(self):
+        """
+        default act-r parameter sets
+
+        """
+        return self.get_actr_parameters(*ACTR_PARAMETER_NAMES)
+
+    def get_default_task_parameters(self):
+        """
+        default parameter sets
+        """
+        return {**PROBABILITY, 'REWARD': {**REWARD}}
 
     # =================================================== #
     # STATS
@@ -569,7 +665,7 @@ class MarkovACTR(MarkovState):
         """
         Return a chunk activation trace
         """
-        df = pd.DataFrame([s.actr_chunk_trace for s in self.log], columns=self.actr_chunk_names).reset_index()
+        df = pd.DataFrame([s.actr_chunk_trace[parameter_name] for s in self.log], columns=self.actr_chunk_names).reset_index()
         return pd.melt(df, id_vars='index', var_name='memory', value_name=parameter_name)
 
     def df_actr_production_traces(self, parameter_name=':utility'):

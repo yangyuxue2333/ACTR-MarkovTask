@@ -85,7 +85,7 @@
          ;:lf 0.1
          ;:bll 0.1
          ;:mas 4.0
-         :rt -100  ;retrieval threshold
+         :rt -2  ;retrieval threshold
          :ul t
          :egs 0.1
          ;:alpha 0.4
@@ -97,9 +97,9 @@
          :model-warnings nil
          :v nil
          :trace-detail low
-         :ult t
+         :ult nil
          ;:act t
-         ;:trace-filter production-firing-only
+         :trace-filter production-firing-only
          ;:pct t
          ;:blt t
          ;:reward-hook "detect-reward-hook"
