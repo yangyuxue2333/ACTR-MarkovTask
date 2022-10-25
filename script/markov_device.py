@@ -19,6 +19,7 @@ import actr
 import random
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import pprint as p
 import json
 import time
@@ -350,7 +351,8 @@ class MarkovACTR(MarkovState):
 
 
         # init working dir
-        curr_dir = os.path.dirname(os.path.realpath('__file__'))
+        script_dir = os.path.join(os.path.dirname(os.path.realpath('../__file__')), 'script')
+        # print('test curr_dir', script_dir)
 
         self.add_actr_commands()
         if reload:
@@ -360,10 +362,9 @@ class MarkovACTR(MarkovState):
             # actr.schedule_event_now("detect-reward-hook")
 
             # load model
-            actr.load_act_r_model(os.path.join(curr_dir, "markov-core.lisp"))
-            actr.load_act_r_model(os.path.join(curr_dir, model + ".lisp"))
-            actr.load_act_r_model(os.path.join(curr_dir, "markov-memory.lisp"))
-
+            actr.load_act_r_model(os.path.join(script_dir, "markov-core.lisp"))
+            actr.load_act_r_model(os.path.join(script_dir, model + ".lisp"))
+            actr.load_act_r_model(os.path.join(script_dir, "markov-memory.lisp"))
 
         # init parameter sets
         self.actr_parameters = self.get_default_actr_parameters()
