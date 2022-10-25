@@ -19,6 +19,26 @@
       state2-selected-stimulus LEFT
       reward 2)
  
+  (M1-3 isa wm
+      status process
+      state1-left-stimulus A1
+      state1-right-stimulus A2
+      state2-left-stimulus C1
+      state2-right-stimulus C2
+      state1-selected-stimulus RIGHT
+      state2-selected-stimulus RIGHT
+      reward 2)
+ 
+  (M1-4 isa wm
+      status process
+      state1-left-stimulus A1
+      state1-right-stimulus A2
+      state2-left-stimulus C1
+      state2-right-stimulus C2
+      state1-selected-stimulus LEFT
+      state2-selected-stimulus RIGHT
+      reward 2)
+ 
  ;;; ZERO REWARD
  (M2-1 isa wm
       status process

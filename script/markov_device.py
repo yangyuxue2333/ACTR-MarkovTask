@@ -13,6 +13,8 @@
 
 
 import os
+from typing import Dict
+
 import actr
 import random
 import numpy as np
@@ -33,13 +35,16 @@ LOCATION = ("LEFT", "RIGHT")
 RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
                 {'f':'B1', 'k':'B2'},
                 {'f':'C1', 'k':'C2'}]
-REWARD = {'B1': 2,
+
+# ACTR PARAMETERS
+ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation']
+
+# TASK PARAMETERS
+REWARD: Dict[str, int] = {'B1': 2,
           'B2': 0,
           'C1': 0,
           'C2': 0}
 PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':.7}
-ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation']
-
 
 random.seed(0)
 
@@ -162,8 +167,6 @@ class MarkovState():
         self.actr_chunk_trace = None
         self.actr_production_trace = None
         self.state0()
-
-
 
     @property
     def state1_response_time(self):
@@ -365,11 +368,10 @@ class MarkovACTR(MarkovState):
         # init parameter sets
         self.actr_parameters = self.get_default_actr_parameters()
         self.task_parameters = self.get_default_task_parameters()
-        '''
+
         # update parameter sets
         self.set_actr_parameters(actr_params)
         self.set_task_parameters(task_params)
-        '''
 
         window = actr.open_exp_window("MARKOV TASK", width=500, height=250, visible=False)
         self.window = window
@@ -569,13 +571,27 @@ class MarkovACTR(MarkovState):
         If kwargs == None: return default parameters
         """
         # print('before', self.task_parameters)
-        new = self.task_parameters.copy()
+        # new = self.task_parameters.copy()
         # if new para given
+        global REWARD
+        global PROBABILITY
+
+        self.task_parameters = self.get_default_task_parameters()
+        REWARD = self.task_parameters['REWARD']
+        PROBABILITY = {'MARKOV_PROBABILITY':self.task_parameters['MARKOV_PROBABILITY'],
+                       'REWARD_PROBABILITY':self.task_parameters['REWARD_PROBABILITY']}
         if kwargs:
-            new.update(kwargs)
-            self.task_parameters = new
-        else:
-            self.task_parameters = self.get_default_task_parameters()
+            # print('before update', REWARD, PROBABILITY)
+            for key, value in kwargs.items():
+                # print(key, value)
+                if key == 'REWARD':
+                    REWARD = value
+                if key == 'MARKOV_PROBABILITY':
+                    PROBABILITY['MARKOV_PROBABILITY'] = value
+                if key == 'REWARD_PROBABILITY':
+                    PROBABILITY['REWARD_PROBABILITY'] = value
+            # print('after update', REWARD, PROBABILITY)
+            self.task_parameters = {**PROBABILITY, 'REWARD': REWARD}
         # print('after', self.task_parameters)
 
 
@@ -590,7 +606,10 @@ class MarkovACTR(MarkovState):
         """
         default parameter sets
         """
-        return {**PROBABILITY, 'REWARD': {**REWARD}}
+        return {'MARKOV_PROBABILITY': 0.7,
+                'REWARD_PROBABILITY': 0.7,
+                'REWARD': {'B1': 2, 'B2': 0, 'C1': 0, 'C2': 0}}
+
 
     # =================================================== #
     # STATS
