@@ -1,5 +1,6 @@
 
 script/.ipynb_checkpoints/
+analysis/.ipynb_checkpoints/
 /.ipynb_checkpoints/
 /.idea/
 *.pyc
@@ -7,3 +8,4 @@ script/.ipynb_checkpoints/
 *.xml
 script/old/
 script/__pycache__/
+analysis/test*
