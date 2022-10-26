@@ -2,7 +2,7 @@
 script/.ipynb_checkpoints/
 analysis/.ipynb_checkpoints/
 /.ipynb_checkpoints/
-/.idea/
+.idea/
 *.pyc
 *.iml
 *.xml
