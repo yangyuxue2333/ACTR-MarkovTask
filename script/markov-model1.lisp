@@ -55,7 +55,7 @@
 ;;; - In the end of each trial, a reward is delivered, encodes reward amount
 ;;; - stop the experiment "done"
 ;;; - NOTE: to make model only look back one step, !eval! (trigger-reward 0) 
-;;;         is added when state2 is encoded
+;;;         is added when state2 is encoded (!!deprecated!!)
 ;;; 
 ;;; Chunk Type descriptions:
 ;;; - markov-stimulus: Contain the state information (0,1,2,3), left and right
@@ -282,7 +282,7 @@
      state2-right-stimulus  =R
    
    !output! (in encode-state2 =L =R)
-   !eval! (trigger-reward 0) ; CLEAR REWARD 
+   ;!eval! (trigger-reward 0) ; CLEAR REWARD 
 )
 
 (p encode-state3

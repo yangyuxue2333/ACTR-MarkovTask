@@ -339,9 +339,8 @@
     
 )
 
-(p plan-state1-retrieve-failure
-   "Plan STATE1: failure
-   Encode default response :LEFT
+(p plan-state1-retrieve-failure-left
+   "Plan STATE1: failure - randomly select one action
    "
    ?retrieval>
       buffer   failure 
@@ -358,6 +357,24 @@
    !output! (in plan-state1-retrieve-failure() )
 )
 
+(p plan-state1-retrieve-failure-right
+   "Plan STATE1: failure
+   Encode default response :LEFT
+   "
+   ?retrieval>
+      buffer   failure 
+    
+   =goal> 
+     step       plan-decide
+     plan-state1-selected-stimulus nil
+==>
+   ; ENCODE PLANED OUTCOME IN GOAL 
+   =goal> 
+     step       respond
+     plan-state1-selected-stimulus right
+   
+   !output! (in plan-state1-retrieve-failure() )
+)
 
 
 ;;; ----------------------------------------------------------------
@@ -400,7 +417,7 @@
      state2-right-stimulus  =R
    
    !output! (in encode-state2 =L =R)
-   !eval! (trigger-reward 0) ; CLEAR REWARD 
+   ;!eval! (trigger-reward 0) ; CLEAR REWARD 
 )
 
 

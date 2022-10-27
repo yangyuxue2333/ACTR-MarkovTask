@@ -75,7 +75,7 @@
 (clear-all)
 (define-model markov-model
     (sgp :seed (100 0)
-         :er t
+         :er nil
          :esc t
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
