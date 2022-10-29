@@ -80,13 +80,12 @@
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
          :ans 0.1
-         :auto-attend t
-         ;:le 0.63
-         ;:lf 0.1
-         ;:bll 0.1
+         :lf 0.1    ;immediately retrieve memory
+         :bll .5    ;base-level activation
          ;:mas 4.0
          :rt -2  ;retrieval threshold
          :ul t
+         ;:epl t ; Enable Production Learning
          :egs 0.1
          ;:alpha 0.4
          ;:imaginal-activation 3.0
@@ -94,11 +93,12 @@
          ;:dat 0.05  ; default action time for all productions
          :show-focus t 
          :needs-mouse t
+         :auto-attend t
          :model-warnings nil
          :v nil
          :trace-detail low
          :ult nil
-         ;:act t
+         :act nil
          :trace-filter production-firing-only
          ;:pct t
          ;:blt t

@@ -38,7 +38,7 @@ RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
                 {'f':'C1', 'k':'C2'}]
 
 # ACTR PARAMETERS
-ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'le', 'mas', 'egs', 'alpha', 'imaginal-activation']
+ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'mas', 'egs', 'alpha', 'imaginal-activation']
 
 # TASK PARAMETERS
 REWARD: Dict[str, int] = {'B1': 2,
