@@ -241,58 +241,14 @@ class MarkovState():
     # ACTR CHUNK TRACE INFO
     # =================================================== #
     @property
-    def actr_memories(self):
-        """
-        (M1-1 isa wm
-          status process
-          state1-left-stimulus A1
-          state1-right-stimulus A2
-          state2-left-stimulus B1
-          state2-right-stimulus B2
-          state1-selected-stimulus LEFT
-          state2-selected-stimulus LEFT
-          reward 2)
-        """
-        actr_memories = []
-        global REWARD
-        reward = [max(REWARD.values()), 0]
-        i = 0
-        for c in list(itertools.product(reward, [['B1', 'B2'], ['C1', 'C2']], ['LEFT', 'RIGHT'], ['LEFT', 'RIGHT'])):
-            r, s2, a1, a2 = c[0], c[1], c[2], c[3]
-            i += 1
-            if i > 8: i = 1
-            name = 'M' + str(r) + '-' + str(i)
-            # print(name, s2, a1, a2, r)
-            actr_memories.append([name, 'isa', 'wm',
-                                  'status', 'process',
-                                  'state1-left-stimulus', 'A1',
-                                  'state1-right-stimulus', 'A2',
-                                  'state2-left-stimulus', s2[0],
-                                  'state2-right-stimulus', s2[1],
-                                  'state1-selected-stimulus', a1,
-                                  'state2-selected-stimulus', a2,
-                                  'reward', r])
-            s = "%s isa wm\n \
-                        status process\n \
-                        state1-left-stimulus A1\n \
-                        state1-right-stimulus A2\n \
-                        state2-left-stimulus %s\n \
-                        state2-right-stimulus %s\n \
-                        state1-selected-stimulus %s\n \
-                        state2-selected-stimulus %s\n \
-                        reward %s" % (name, s2[0], s2[1], a1, a2, r)
-            # print(s)
-        self._actr_memories = actr_memories
-        return self._actr_memories
-
-    @property
     def actr_chunk_names(self):
         """
         return a list of DM chunk names
         ['M1-1', 'M1-2'...]
         """
+        reward = [1, 0]
         res = []
-        for i in [2,0]:
+        for i in reward:
             for j in range(1, 9):
                 res.append('M' + str(i) + '-' + str(j))
         self._actr_chunk_names = res
@@ -399,6 +355,8 @@ class MarkovACTR(MarkovState):
         script_dir = os.path.join(os.path.dirname(os.path.realpath('../__file__')), 'script')
         # print('test curr_dir', script_dir)
 
+
+
         self.add_actr_commands()
         if reload:
             # schedule event of detect production/reward before loading model
@@ -409,6 +367,7 @@ class MarkovACTR(MarkovState):
             # load model
             actr.load_act_r_model(os.path.join(script_dir, "markov-core.lisp"))
             actr.load_act_r_model(os.path.join(script_dir, model + ".lisp"))
+            actr.add_dm(*self.actr_dm())
             actr.load_act_r_model(os.path.join(script_dir, "markov-memory.lisp"))
 
         # init parameter sets
@@ -640,6 +599,54 @@ class MarkovACTR(MarkovState):
             self.task_parameters = {**PROBABILITY, 'REWARD': REWARD}
         # print('after', self.task_parameters)
 
+    # =================================================== #
+    # DM SETUP
+    # =================================================== #
+    def actr_dm(self):
+        """
+        Add declarative memory
+        (M1-1 isa wm
+          status process
+          state1-left-stimulus A1
+          state1-right-stimulus A2
+          state2-left-stimulus B1
+          state2-right-stimulus B2
+          state1-selected-stimulus LEFT
+          state2-selected-stimulus LEFT
+          reward 2)
+        """
+
+        global REWARD
+        reward = [max(REWARD.values()), 0]
+        i,j = 0,1
+        dm = []
+        for c in list(itertools.product(reward, [['B1', 'B2'], ['C1', 'C2']], ['LEFT', 'RIGHT'], ['LEFT', 'RIGHT'])):
+            r, s2, a1, a2 = c[0], c[1], c[2], c[3]
+            i += 1
+            if i > 8: i = 1  # 8 memory
+            if r == 0: j = 0 # 1=reward; 0=non-reward
+            name = 'M' + str(j) + '-' + str(i)
+            # print(name, s2, a1, a2, r)
+            dm.append([name, 'isa', 'wm',
+                                  'status', 'process',
+                                  'state1-left-stimulus', 'A1',
+                                  'state1-right-stimulus', 'A2',
+                                  'state2-left-stimulus', s2[0],
+                                  'state2-right-stimulus', s2[1],
+                                  'state1-selected-stimulus', a1,
+                                  'state2-selected-stimulus', a2,
+                                  'reward', r])
+            # s = "%s isa wm\n \
+            #                 status process\n \
+            #                 state1-left-stimulus A1\n \
+            #                 state1-right-stimulus A2\n \
+            #                 state2-left-stimulus %s\n \
+            #                 state2-right-stimulus %s\n \
+            #                 state1-selected-stimulus %s\n \
+            #                 state2-selected-stimulus %s\n \
+            #                 reward %s" % (name, s2[0], s2[1], a1, a2, r)
+            # # print(s)
+        return dm
 
     def get_default_actr_parameters(self):
         """
