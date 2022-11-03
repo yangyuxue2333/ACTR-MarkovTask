@@ -1,5 +1,5 @@
 (set-base-levels
- (M1-1 2) (M1-3 1)
+ (M1-2 2) (M1-4 1)
 )
 
 ;; (add-dm 
