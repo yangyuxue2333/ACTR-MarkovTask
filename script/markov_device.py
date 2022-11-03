@@ -41,11 +41,8 @@ RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
 ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'mas', 'egs', 'alpha', 'imaginal-activation']
 
 # TASK PARAMETERS
-REWARD: Dict[str, int] = {'B1': 2,
-          'B2': 0,
-          'C1': 0,
-          'C2': 0}
-PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':.7}
+REWARD: Dict[str, float] = {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}
+PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY':{'B1': 0.1, 'B2': 0.7, 'C1': 0.2, 'C2': 0.4}}
 
 random.seed(0)
 
@@ -149,7 +146,8 @@ class MarkovState():
         self.kind = "MARKOV_STATE"
         self.state = 0
         self.markov_probability = PROBABILITY['MARKOV_PROBABILITY']
-        self.reward_probability = PROBABILITY['REWARD_PROBABILITY']
+        self.reward_probability_dict = PROBABILITY['REWARD_PROBABILITY']
+        self.reward_dict = REWARD
         self.state1_stimuli = None
         self.state2_stimuli = None
 
@@ -185,6 +183,12 @@ class MarkovState():
     def state2_response_time(self, val):
         self._state2_response_time = val
 
+    def get_letter_frequency(self, probability):
+        if probability > .5:
+            return 'common'
+        else:
+            return 'rare'
+
     def state0(self):
         self.state1_stimuli = MarkovStimulus('A1'), MarkovStimulus('A2')
         self.state = 0
@@ -197,19 +201,24 @@ class MarkovState():
         if RESPONSE_MAP[0][response] == 'A1':
             if random.random() < self.markov_probability:
                 self.state2_stimuli = MarkovStimulus('B1'), MarkovStimulus('B2')
-                self.state_frequency = 'common'
+                # log reward frequency
+                #self.state_frequency = 'common'
+                self.state_frequency = self.get_letter_frequency(self.markov_probability)
             else:
                 self.state2_stimuli = MarkovStimulus('C1'), MarkovStimulus('C2')
-                self.state_frequency = 'rare'
+                #self.state_frequency = 'rare'
+                self.state_frequency = self.get_letter_frequency(1-self.markov_probability)
             self.state2_selected_stimulus = RESPONSE_MAP[1][response]
 
         if RESPONSE_MAP[0][response] == 'A2':
             if random.random() < self.markov_probability:
                 self.state2_stimuli = MarkovStimulus('C1'), MarkovStimulus('C2')
-                self.state_frequency = 'common'
+                #self.state_frequency = 'common'
+                self.state_frequency = self.get_letter_frequency(self.markov_probability)
             else:
                 self.state2_stimuli = MarkovStimulus('B1'), MarkovStimulus('B2')
-                self.state_frequency = 'rare'
+                #self.state_frequency = 'rare'
+                self.state_frequency = self.get_letter_frequency(1-self.markov_probability)
             self.state2_selected_stimulus = RESPONSE_MAP[2][response]
 
         self.state = 1
@@ -225,16 +234,24 @@ class MarkovState():
         self.state = 2
 
     def reward(self):
-        if random.random() < self.reward_probability:
-            self.received_reward = REWARD[self.state2_selected_stimulus]
-            self.reward_frequency = 'common'
-        else:
-            self.received_reward = 0
-            self.reward_frequency = 'rare'
+        """
+        self.reward_probability = {'B1':0.1, 'B2':0.7, 'C1':0.1,'C2':0.4}
+        self.reward_dict = {'B1':2, 'B2':2, 'C1':2,'C2':2}
 
-        # TODO: may change later depending on reward rule
-        if REWARD[self.state2_selected_stimulus] == 0:
-            self.reward_frequency = 'common'
+        """
+        # log reward probability
+        self.reward_probability = self.reward_probability_dict[self.state2_selected_stimulus]
+
+        if random.random() < self.reward_probability_dict[self.state2_selected_stimulus]:
+            self.received_reward = self.reward_dict[self.state2_selected_stimulus]
+            # log reward frequency
+            self.reward_frequency = self.get_letter_frequency(self.reward_probability)
+        else:
+            self.received_reward = 0  # default reward value
+            # log reward frequency
+            self.reward_frequency = self.get_letter_frequency(1-self.reward_probability)
+
+        # update state
         self.state = 3
 
     # =================================================== #
@@ -660,8 +677,8 @@ class MarkovACTR(MarkovState):
         default parameter sets
         """
         return {'MARKOV_PROBABILITY': 0.7,
-                'REWARD_PROBABILITY': 0.7,
-                'REWARD': {'B1': 2, 'B2': 0, 'C1': 0, 'C2': 0}}
+                'REWARD_PROBABILITY': {'B1': 0.1, 'B2': 0.7, 'C1': 0.2, 'C2': 0.4},
+                'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}}
 
 
     # =================================================== #
@@ -755,5 +772,4 @@ class MarkovACTR(MarkovState):
 
     def __repr__(self):
         return self.__str__()
-
 
