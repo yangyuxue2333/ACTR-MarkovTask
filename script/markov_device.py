@@ -263,11 +263,11 @@ class MarkovState():
         return a list of DM chunk names
         ['M1-1', 'M1-2'...]
         """
-        reward = [1, 0]
+
         res = []
-        for i in reward:
-            for j in range(1, 9):
-                res.append('M' + str(i) + '-' + str(j))
+        for i in ['A', 'B', 'C']:
+            for j in range(1, 5):
+                res.append('M' + '-' + i + str(j))
         self._actr_chunk_names = res
         return self._actr_chunk_names
 
@@ -471,7 +471,10 @@ class MarkovACTR(MarkovState):
             self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(parameter_name=':utility')
 
             self.log.append(self.markov_state)
-            if self.verbose: print(self.markov_state)
+
+            if self.verbose:
+                print(self.markov_state)
+
 
     def update_state0(self):
         self.markov_state = MarkovState()
@@ -484,6 +487,7 @@ class MarkovACTR(MarkovState):
             ['isa', ['markov-stimulus-location', 'markov-stimulus'],
              'kind', 'markov-stimulus',
              'stage', 1,
+             'state', 'A',
              'color', 'green',
              'left-stimulus', 'A1',
              'right-stimulus', 'A2',
@@ -499,6 +503,7 @@ class MarkovACTR(MarkovState):
             ['isa', ['markov-stimulus-location', 'markov-stimulus'],
              'kind', 'markov-stimulus',
              'stage', 2,
+             'state', self.markov_state.state2_stimuli[0].text[0],
              'color', 'orange',
              'left-stimulus', self.markov_state.state2_stimuli[0].text,
              'right-stimulus', self.markov_state.state2_stimuli[1].text,
@@ -619,7 +624,7 @@ class MarkovACTR(MarkovState):
     # =================================================== #
     # DM SETUP
     # =================================================== #
-    def actr_dm(self):
+    def actr_dm0(self):
         """
         Add declarative memory
         (M1-1 isa wm
@@ -663,6 +668,41 @@ class MarkovACTR(MarkovState):
             #                 state2-selected-stimulus %s\n \
             #                 reward %s" % (name, s2[0], s2[1], a1, a2, r)
             # # print(s)
+        return dm
+
+    def actr_dm(self):
+        """
+        Add declarative memory
+        CHUNK0-0
+           STATUS  PROCESS
+           LEFT-STIMULUS  A1
+           RIGHT-STIMULUS  A2
+           CURR-STATE  A
+           NEXT-STATE  B
+           RESPONSE  RIGHT
+        """
+
+        global REWARD
+        reward = [max(REWARD.values()), 0]
+        comb1 = [i for i in itertools.product(['A'], ['LEFT', 'RIGHT'], ['B', 'C'], ['none'])]
+        comb2 = [i for i in itertools.product(['B', 'C'], ['LEFT', 'RIGHT'], ['none'], reward)]
+        comb = comb1 + comb2
+        dm = []
+        i = 0
+        for c in comb:
+            s, a, s_, r = c[0], c[1], c[2], c[3]
+            i += 1
+            if i > 4: i = 1  # 4 * 3 memory
+            #print(s, a, s_, r)
+            name = 'M' + '-' + s + str(i)
+            dm.append([name, 'isa', 'wm',
+                       'status', 'process',
+                       'left-stimulus', s+'1',
+                       'right-stimulus', s+'2',
+                       'curr-state', s,
+                       'next-state', s_,
+                       'response', a,
+                       'reward', r])
         return dm
 
     def get_default_actr_parameters(self):
@@ -773,3 +813,134 @@ class MarkovACTR(MarkovState):
     def __repr__(self):
         return self.__str__()
 
+
+class MarkovHuman(MarkovState):
+    """A class for recording a Markov trial"""
+
+    def __init__(self, model='markov-monkey', verbose = True):
+        """Inits a markov trial
+        stimuli contain a list of markov states, e.g. [("A1", "A2"), ("B1", "B2")]
+        """
+        self.kind = model
+        self.index = 0
+
+        self.log = []
+        self.verbose = verbose
+
+        # init markov state
+        self.markov_state = None
+        self.action_space = ['f', 'k']
+        self.response = None
+
+        # init parameters
+        self.rl_parameters = {}
+        self.task_parameters = {'MARKOV_PROBABILITY': 0.7,
+                                'REWARD_PROBABILITY': {'B1': 0.1, 'B2': 0.7, 'C1': 0.2, 'C2': 0.4},
+                                'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}}
+
+    def respond_to_key_press(self):
+        key = None
+        if self.kind == 'markov-monkey':
+            key = self.response_monkey()
+
+        elif self.kind == 'markov-left':
+            key = self.response_left()
+
+        else:
+            key = self.action_space[1]
+
+        self.response = key
+        self.next_state(key)
+
+    def response_monkey(self):
+        return random.choice(self.action_space)
+
+    def response_left(self):
+        return self.action_space[0]
+
+    def next_state(self, response):
+        '''decide next state based on response
+           self.markov_state will be updated based on response
+
+           e.g. self.markov_state.state == 0, then call self.markov_state.state1(key)
+           e.g. self.markov_state.state == 2, then call self.markov_state.state2(key)
+                                              then call self.markov_state.reward()
+           note: the amount of reward is specified by REWARD dict()
+
+           this function will be called in respond_to_key_press() in state 1, 2
+           and in update_state3() in state 3
+        '''
+        # print('test', self.markov_state.state1_stimuli, self.markov_state.state2_stimuli)
+        if self.markov_state.state == 0:
+            self.markov_state.state1(response)
+            self.markov_state.state1_response_time = 0.0
+
+
+        else:
+            self.markov_state.state2(response)
+            self.markov_state.state2_response_time = 0.0
+
+            # continue deliver rewards, no need to wait for response
+            self.markov_state.reward()
+
+        # log
+        if self.markov_state.state == 3:
+
+            # log actr trace
+            self.log.append(self.markov_state)
+            if self.verbose:
+                print(self.markov_state)
+
+    def run_experiment(self, n=1):
+        """
+        """
+        for i in range(n):
+            self.markov_state = MarkovState()
+            self.markov_state.state0()  # init
+            self.respond_to_key_press()
+            self.respond_to_key_press()
+            self.index += 1
+
+    def df_behaviors(self):
+        """
+        Return model generated beh data
+        """
+        rows = [[
+            s.state1_response,
+            s.state1_response_time,
+            s.state1_selected_stimulus,
+            s.state2_response,
+            s.state2_response_time,
+            s.state2_selected_stimulus,
+            s.received_reward,
+            s.state_frequency,
+            s.reward_frequency
+        ] for s in self.log]
+        return pd.DataFrame(rows, columns= ['state1_response',
+                                            'state1_response_time',
+                                            'state1_selected_stimulus',
+                                            'state2_response',
+                                            'state2_response_time',
+                                            'state2_selected_stimulus',
+                                            'received_reward',
+                                            'state_frequency',
+                                            'reward_frequency'])
+
+    def calculate_stay_probability(self):
+        """
+        Calculate the probability of stay:
+            A trial is marked as "STAY" if the agent selects the same action in current trial (e.g. LEFT)
+            as the previous trial
+        """
+        df = self.df_behaviors()
+        df['state1_stay'] = df['state1_response'].shift(-1)
+        df['state1_stay'] = df.apply(
+            lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0), axis=1)
+        return df
+
+    def __str__(self):
+        header = "######### SETUP MODEL " + self.kind + " #########\n" + str(self.task_parameters)
+        return header
+
+    def __repr__(self):
+        return self.__str__()

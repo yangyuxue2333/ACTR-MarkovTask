@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model2.lisp
-;;; Version     :v2.0
+;;; Version     :v2.2
 ;;;
 ;;; Description : model-base 
 ;;;
@@ -44,37 +44,45 @@
 ;;;
 ;;; Task description
 ;;; - At state 0: a "+" appears on the screen and prepare WM. 
-;;; - At stage 1: a pair of Markov Stimli; encode stimuli in WM
-;;; - Planing: retrieve a memory R = 10; STATE1-LEFT-STIMULUS = ?; 
-;;;
-;;; CHUNK0-0
-;;; STATUS  PROCESS
-;;; REWARD  10
-;;; STATE1-LEFT-STIMULUS  A1
-;;; STATE1-RIGHT-STIMULUS  A2
-;;; STATE2-LEFT-STIMULUS  B1
-;;; STATE2-RIGHT-STIMULUS  B2
-;;; STATE1-SELECTED-STIMULUS  RIGHT
-;;; STATE2-SELECTED-STIMULUS  RIGHT
-;;;
+;;; - At stage 1: display a pair of Markov Stimli; attend stimuli pair, 
+;;;   - Planing: backward planing method
+;;;     - PLAN-BACKWARD-AT-STAGE1-STATE2
+;;;     - PLAN-BACKWARD-AT-STAGE1-STATE2
+;;;     - PLAN-BACKWARD-AT-STAGE1-COMPLETE
+;;;   choose action based on planning, encode stimulus, finally refresh memory
+;;; 
+;;; - At stage 2: a pair of Markov Stimli; attend stimuli pair
 ;;;   Four productions compete: choose-left(), choose-right(),
 ;;;   dont-choose-left(), dont-choose-right().
 ;;;   Agent makes response L or R 
-;;; - At stage 2: a pair of Markov Stimli; encode stimuli in WM
-;;;   Four productions compete: choose-left(), choose-right(),
-;;;   dont-choose-left(), dont-choose-right().
-;;;   Agent makes response L or R 
+;;;   - Planing: backward planing method
+;;;     - PLAN-BACKWARD-AT-STAGE2-STATE2 
+;;;     - PLAN-BACKWARD-AT-STAGE2-COMPLETE
+;;;   choose action based on planning, encode stimulus, finally refresh memory
+;;;
 ;;; - In the end of each trial, a reward is delivered, encodes reward amount
 ;;; - stop the experiment "done"
 ;;; 
-;;; Chunk Type descriptions:
-;;; - markov-stimulus: Contain the state information (0,1,2,3), left and right
-;;;                    stimulus properties
+;;; Chunk Type descriptions: 
+;;; - markov-stimulus: Contain the state information (STATE, STAGE, LEFT-STIMULUS, RIGHT-STIMULUS)
+;; MARKOV-STIMULUS0-0
+;;    STATE  A
+;;    KIND  MARKOV-STIMULUS
+;;    SCREEN-POS  MARKOV-STIMULUS-LOCATION0-0
+;;    COLOR  GREEN
+;;    STAGE  1
+;;    LEFT-STIMULUS  A1
+;;    RIGHT-STIMULUS  A2
 ;;;
-;;; - wm: Contains stimuli properties from two states, selected response, and 
-;;;       reward amount
-;;;
-;;;
+;;; - WM: contains CURR-STATE, NEXT-STATE, RESPONSE, and REWARD
+;; M-A1
+;;    STATUS  PROCESS
+;;    LEFT-STIMULUS  A1
+;;    RIGHT-STIMULUS  A2
+;;    REWARD  NONE
+;;    CURR-STATE  A
+;;    NEXT-STATE  B
+;;    RESPONSE  LEFT
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
@@ -84,29 +92,37 @@
 ;;; p find-screen ()  
 ;;; p process-fixation()
 ;;; ===== state1 =====
-;;; p encode-state1-stimulus ()  
-;;; p plan-state1-retrieve ()  
-;;; p plan-state1-retrieve-success ()  
-;;; |--- p choose-state1-left()
-;;; |--- p choose-state1-right()
+;;; p attend-state1()
+;;; p plan-state1 ()  
+;;; |--------- p PLAN-BACKWARD-AT-STAGE1-STATE2()
+;;; |--------- p PLAN-BACKWARD-AT-STAGE1-STATE1()
+;;; |--------- p PLAN-BACKWARD-AT-STAGE1-COMPLETE()
+;;; |--------- p choose-state1-left()
+;;; |--------- p choose-state1-right()
+;;; p encode-state1()
+;;; p refresh-memory() 
+;;; p refresh-memory-success()
 ;;; ===== state2 =====
 ;;; p encode-state2-stimulus ()  
-;;; p plan-state2-retrieve ()  
-;;; p plan-state2-retrieve-success ()  
-;;; |--- p choose-state2-left()
-;;; |--- p choose-state2-right()
-;;; ===== feedback =====
-;;; p encode-reward() 
+;;; p plan-state2 ()  
+;;; |--------- p PLAN-BACKWARD-AT-STAGE2()
+;;; |--------- p PLAN-BACKWARD-AT-STAGE2-COMPLETE()
+;;; |--------- p choose-state2-left()
+;;; |--------- p choose-state2-right() 
+;;; ===== reward =====
+;;; p encode-state2() 
 ;;; p refresh-memory() 
 ;;; p refresh-memory-success()
 ;;; p done()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
 ;;; --------- CHUNK TYPE ---------
 (chunk-type (markov-stimulus (:include visual-object))
       kind 
       stage
+      state
       color
       left-stimulus
       right-stimulus)
@@ -114,6 +130,7 @@
 (chunk-type (markov-stimulus-location (:include visual-location))
       kind
       stage
+      state
       color
       left-stimulus
       right-stimulus
@@ -127,26 +144,32 @@
 
 (chunk-type wm    
       status
-      state1-left-stimulus
-      state1-right-stimulus 
-      state2-left-stimulus
-      state2-right-stimulus 
-      state1-selected-stimulus
-      state2-selected-stimulus
+      curr-state
+      left-stimulus
+      right-stimulus
+      next-state
+      response
       reward)
 
-;;; DEFINE PLAN GOAL
 (chunk-type phase
       step
       stage
-      motivation
-      plan-state1-selected-stimulus
-      plan-state2-selected-stimulus)
+      plan-state1
+      plan-state1-response
+      plan-state2
+      plan-state2-response
+      motivation                    ;;; mental counts
+      updated-motivation            ;;; mental counts
+      time-onset                    ;;; mental clock
+      time-duration                 ;;; mental clock
+      previous-reward)              ;;; previous reward given
+
+
 
 ;;; --------- DM ---------
 (add-dm 
-  (start-trial isa phase step attend-fixation)
- )
+  (start-trial isa phase step attend-stimulus motivation 0 time-onset 0.0 previous-reward 0.0)
+)
 
 
 ;;; ------------------------------------------------------------------
@@ -155,6 +178,10 @@
 
 (p prepare-wm
    "Init task, prepare WM"
+   ?visual>
+    buffer empty
+    state free
+   
    ?imaginal>
      buffer empty
      state free
@@ -165,18 +192,25 @@
      execution free
 
    ?goal>
-     ;buffer   empty
      state    free
 
    =goal>
      isa      phase
-     step     attend-fixation
+     step     attend-stimulus 
+     time-onset =TIME
+     previous-reward =R
      ;motivation 10
 ==>
    +imaginal>
      isa wm
      status process
+   
+   *goal>
+     motivation =R
+      
+   
    !eval! (trigger-reward 0) ; CLEAR REWARD  
+   !output! (TIME =TIME R =R)
 )
 
 (p find-screen
@@ -198,21 +232,28 @@
    "Attend to the fixation cross STATE0"
     ?visual>
       state    free
+   
     =visual>
       text     T
       value    "+"
+   
     ?imaginal>
       state    free
+   
     =goal>
      isa        phase
-     step       attend-fixation 
-==>
-    =goal>
-      step       attend-stimulus
-      stage      0
-      
+     step       attend-stimulus  
+     motivation =MOT 
+==>   
+   !bind!       =TIME (mp-time)
    
-    ;!output! (in process-fixation())
+    =goal> 
+      stage      0
+      ; INIT MOT (keep track of discounted motivation)
+      updated-motivation  =MOT  
+      time-onset =TIME
+   
+   !output! (in process-fixation time-onset =TIME updated-motivation =MOT)
 )
 
 ;;; ----------------------------------------------------------------
@@ -225,26 +266,22 @@
 ;;; state3: Rewards +10
 ;;; ----------------------------------------------------------------
 
-
-;;; ----------------------------------------------------------------
-;;; ATTEND MARKOV STIMULUS: STATE1
-;;; ----------------------------------------------------------------
-
-(p encode-state1
+(p attend-state1
    "Encodes the STATE1 stimulus in WM"
    =visual>
      kind MARKOV-STIMULUS
      stage 1
      stage =STAGE
+     state =STATE
      left-stimulus  =L
      right-stimulus =R
      
 
    =imaginal>
      status process 
-     state1-left-stimulus nil
-     state1-right-stimulus nil
-     state1-selected-stimulus nil
+     curr-state nil
+     left-stimulus nil
+     right-stimulus nil
 
    ?retrieval>
      state free
@@ -255,323 +292,490 @@
      step       attend-stimulus
 ==>
    =goal> 
-     step       plan-retrieve ;respond
+     step       plan 
      stage      =STAGE
    
    =visual>
    
    =imaginal> 
-     state1-left-stimulus   =L
-     state1-right-stimulus  =R
+     curr-state =STATE
+     left-stimulus  =L
+     right-stimulus =R
    
-   !output! (in encode-state2 =L =R)
+   !output! (in attend-state1 =STATE =L =R)
+    
 )
 
-(p plan-state1-retrieve
-   "Plan STATE1 by retrieving a reward memory"
+;;; ----------------------------------------------------------------
+;;; PLAN (BACKWARD)
+;;; ----------------------------------------------------------------
+;;; Plan state2, 
+;; +retrieval>
+;;      isa wm
+;;      outcome 2
+;;      next-state nil ;; to ensure this is Stage 2
+;;; Plan state1,
+;;; ...
+;;    =retrieval>
+;;       isa wm
+;;       outcome 2
+;;       next-state nil  ;; to ensure this is stage 2!
+;;       state =TARGET
+;; ==>
+;;    ...
+;;    +retrieval>
+;;       isa wm
+;;       state A
+;;       next-state =TARGET
+;;; ----------------------------------------------------------------
+(p plan-backward-at-stage1-state2
+   "Plan backward at stage1: state2"
    ?retrieval>
-     state free
-     buffer empty
+        state free
+        buffer empty
    
-   ?goal> 
-     state free
+   ?goal>
+       state free
    
-   ?imaginal>
-     state free
-   
-   =imaginal> 
-     state1-left-stimulus   =L1
-     state1-right-stimulus  =R1
-   
-   =goal> 
-     step       plan-retrieve
-     stage      1
-     plan-state1-selected-stimulus nil
+   =visual>
+     kind MARKOV-STIMULUS
+     stage 1
 
-==>
-   ;;; TODO: need to change based on reward policy
+   =imaginal>
+       - curr-state nil
+       respond nil
+       next-state nil
+   
+   =goal>
+       isa phase
+       step plan
+       plan-state1 nil
+       plan-state2 nil
+==> 
    +retrieval>
-     ;:recently-retrieved nil
-     status process
-     > reward 0
-     state1-left-stimulus   =L1
-     state1-right-stimulus  =R1
-     - state2-left-stimulus nil
-     - state2-right-stimulus nil
-     - state1-selected-stimulus nil
-     - state2-selected-stimulus nil
+        isa wm
+        status process
+        > reward 0
+        next-state none
+        :recently-retrieved nil       
    
    =imaginal>
    
-   =goal> 
-     step       plan-decide
-    
+   =goal>
+   
+   =visual>
+
+   !output! (plan-backward-state2)
 )
 
-(p plan-state1-retrieve-success
-   "Plan STATE1: success
-   Encode planed response in GOAL
-   "
+(p plan-backward-at-stage1-state1
+   "Plan backward at stage1: state1"
    ?retrieval>
-    state free
-    buffer full
+        state free
+        buffer full
    
    ?goal>
-     state free
+       state free
    
-   ?imaginal>
-     state free
+   =visual>
+     kind MARKOV-STIMULUS
+     stage 1
    
-   =goal> 
-     step       plan-decide
-     plan-state1-selected-stimulus nil
+   =imaginal>
+       - curr-state nil
+       respond nil
+       next-state nil
+   
+   =goal>
+       isa phase
+       step plan
+       plan-state1 nil
+       plan-state2 nil
    
    =retrieval>
-     > reward 0
-     state1-selected-stimulus  =RESPONSE
-==>
-   ; ENCODE PLANED OUTCOME IN GOAL 
-   =goal> 
-     step       respond
-     plan-state1-selected-stimulus =RESPONSE
+        isa wm
+        status process
+        curr-state =CURR
+==> 
+   -retrieval>
    
-   !output! (in plan-state1-retrieve-success() S1 =RESPONSE)
-    
+   +retrieval>
+        isa wm
+        status process
+        curr-state A
+        reward none
+        next-state =CURR
+        :recently-retrieved nil       
+   
+   =imaginal>
+   
+   =visual>
+   
+   =goal>
+       plan-state2 =CURR
+
+   !output! (plan-backward-state1 STATE2 IS =CURR)
 )
 
-(p plan-state1-retrieve-failure-left
-   "Plan STATE1: failure - randomly select one action
-   "
+
+(p plan-backward-at-stage1-complete
+   "Plan until state1"
    ?retrieval>
-      buffer   failure 
-    
-   =goal> 
-     step       plan-decide
-     plan-state1-selected-stimulus nil
-==>
-   ; ENCODE PLANED OUTCOME IN GOAL 
-   =goal> 
-     step       respond
-     plan-state1-selected-stimulus left
+        state free
+        buffer full
    
-   !output! (in plan-state1-retrieve-failure() )
+   ?goal>
+       state free
+   
+   =visual>
+     kind MARKOV-STIMULUS
+     stage 1
+   
+   =imaginal>
+       - curr-state nil
+       response nil
+       next-state nil
+   
+   =goal>
+       isa phase
+       step plan
+       plan-state1 nil
+       - plan-state2 nil
+   
+   =retrieval>
+        isa wm
+        status process
+        curr-state A
+        reward none
+        response =RESP
+
+==>
+   
+   =goal> 
+       step respond
+       plan-state1 nil
+       plan-state2 nil
+   
+   =imaginal>
+       response =RESP
+   
+   -retrieval>
+   
+   =visual>
+   
+   !output! (plan-backward-complete STATE1 RESP =RESP)
 )
 
-(p plan-state1-retrieve-failure-right
-   "Plan STATE1: failure
-   Encode default response :LEFT
-   "
-   ?retrieval>
-      buffer   failure 
-    
-   =goal> 
-     step       plan-decide
-     plan-state1-selected-stimulus nil
-==>
-   ; ENCODE PLANED OUTCOME IN GOAL 
-   =goal> 
-     step       respond
-     plan-state1-selected-stimulus right
-   
-   !output! (in plan-state1-retrieve-failure() )
-)
 
 
-;;; ----------------------------------------------------------------
-;;; ATTEND MARKOV STIMULUS: STATE2
-;;; ----------------------------------------------------------------
-
-
-(p encode-state2
+(p encode-state1
    "Encodes the STATE2 stimulus in WM"
    =visual>
      kind MARKOV-STIMULUS
      stage 2
      stage =STAGE
+     state =STATE
      left-stimulus  =L
      right-stimulus =R
      
    =imaginal>
      status process 
-     - state1-selected-stimulus nil
-     state2-left-stimulus nil
-     state2-right-stimulus nil
-     state2-selected-stimulus nil
+     - curr-state nil
+     - response nil
+     next-state nil
+     reward nil
 
    ?retrieval>
      state free
      buffer empty
+   
+   ?manual> 
+     state free
 
    =goal>
      isa        phase
-     step       attend-stimulus 
+     step       encode-stimulus 
 ==>
    =goal> 
-     step       plan-retrieve ;respond
+     step       refresh-memory 
      stage      =STAGE
    
    =visual>
    
    =imaginal>
-     state2-left-stimulus   =L
-     state2-right-stimulus  =R
-   
-   !output! (in encode-state2 =L =R)
-   ;!eval! (trigger-reward 0) ; CLEAR REWARD 
+     next-state =STATE
+     reward none
+      
+   !output! (in encode-state1 =L =R)
 )
 
 
-(p plan-state2-retrieve
-   "Plan STATE2 by retrieving a reward memory
+(p attend-state2
+  =visual>
+     kind MARKOV-STIMULUS
+     stage 2
+     stage =STAGE
+     state =STATE
+     left-stimulus  =L
+     right-stimulus =R
    
-   "
+   =goal> 
+     step       attend-stimulus
+     stage      =STAGE
+   
+   ?imaginal>
+     state free
+     buffer empty
+   
+==> 
+   +imaginal>
+     isa wm
+     status process
+     curr-state =STATE
+     left-stimulus  =L
+     right-stimulus =R
+     response nil
+     next-state nil
+     reward nil
+   
+   =goal>
+     step       plan 
+     plan-state2 nil
+   
+   =visual>
+   
+   !output! (in attend-state2 =L =R)
+)
+
+(p plan-backward-at-stage2
+   "Plan backward at stage2"
+   ?retrieval>
+        state free
+        buffer empty
+   
+   ?goal>
+       state free
+   
+   =visual>
+     kind MARKOV-STIMULUS
+     stage 2
+
+   =imaginal>
+       status process
+       - curr-state nil
+       curr-state =CURR
+       response nil
+       next-state nil
+       reward nil
+   
+   =goal>
+       isa phase
+       step plan
+       plan-state2 nil
+==> 
+   +retrieval>
+        isa wm
+        status process
+        curr-state =CURR
+        > reward 0
+        next-state none
+        :recently-retrieved nil       
+   
+   =imaginal>
+   
+   =goal>
+       plan-state2 =CURR
+   
+   =visual>
+
+   !output! (plan-backward-at-stage2)
+)
+
+ (p plan-backward-at-stage2-complete
+   "Plan complete"
+   ?retrieval>
+        state free
+        buffer full
+   
+   ?goal>
+       state free
+   
+   =visual>
+     kind MARKOV-STIMULUS
+     stage 2
+   
+   =imaginal>
+       - curr-state nil
+       response nil
+       next-state nil
+   
+   =goal>
+       isa phase
+       step plan
+       - plan-state2 nil
+   
+   =retrieval>
+        isa wm
+        status process 
+        response =RESP
+
+==>
+   
+   =goal> 
+       step respond
+       plan-state1 nil
+       plan-state2 nil
+   
+   =imaginal>
+       response =RESP
+   
+   -retrieval>
+   
+   =visual>
+   
+   !output! (plan-backward-complete-state2 =RESP)
+)
+
+
+
+(p encode-state2
+   "Encodes the STATE3 (REWARD) in WM" 
+    =visual>
+     kind MARKOV-REWARD
+     stage 3
+     stage =STAGE
+     reward =REWARD
+   
+    =goal>
+     isa        phase
+     step       encode-stimulus
+
+   =imaginal>
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     - response nil
+     next-state nil
+     reward nil
+     
+
+==>
+   =goal> 
+     step       refresh-memory  
+     stage      =STAGE
+   
+   =imaginal>
+     reward    =REWARD
+     next-state none
+   
+   -visual>
+      
+   !eval! (trigger-reward =REWARD)
+   
+   !output! (in  encode-state2 reward =REWARD)
+)
+
+;;; ----------------------------------------------------------------
+;;; REFRESH MEMORY
+;;; ---------------------------------------------------------------- 
+;;; Retrieve WM 
+;;; ----------------------------------------------------------------
+
+(p refresh-memory
+  "refresh memorty "
+   ?imaginal>
+     state free
+     buffer full
+   
    ?retrieval>
      state free
      buffer empty
    
-   ?goal> 
-     state free
-   
-   ?imaginal>
-     state free
+   =goal>
+     step  refresh-memory
    
    =imaginal>
-    state1-left-stimulus  =S11
-    state1-right-stimulus =S12
-    state2-left-stimulus  =S21
-    state2-right-stimulus =S22
-    state1-selected-stimulus =R1
-    state2-selected-stimulus nil
-    
+       status  PROCESS
+       left-stimulus  =LEFT
+       right-stimulus  =RIGHT
+       reward  =R
+       curr-state  =CURR
+       next-state  =NEXT
+       response  =RESP
    
-   =goal> 
-     step       plan-retrieve
-     stage      2
-     - plan-state1-selected-stimulus nil
-     plan-state2-selected-stimulus nil
-
 ==>
-   ;;; need to change based on reward policy
-   +retrieval>
-     ;:recently-retrieved nil
-     status process
-     > reward 0 
-     state1-left-stimulus  =S11
-     state1-right-stimulus =S12
-     state2-left-stimulus  =S21
-     state2-right-stimulus =S22
-     state1-selected-stimulus =R1 
    
-   =goal> 
-     step       plan-decide
+   =goal>
    
    =imaginal>
    
-   !output! (in plan-state2-retrieve =S11 =S12 =S21 =S22 =R1)
-     
+   +retrieval>
+       isa wm
+       status  PROCESS
+       left-stimulus  =LEFT
+       right-stimulus  =RIGHT
+       reward  =R
+       curr-state  =CURR
+       next-state  =NEXT
+       response  =RESP
+       :recently-retrieved reset
 )
 
-(p plan-state2-retrieve-success
-   "Plan STATE1: success
-   Encode planed response in GOAL
-   "
+(p refresh-success
+ "success refresh"
+  ?imaginal>
+     state free
+     buffer full
+   
    ?retrieval>
      state free
      buffer full
    
-   ?goal>
-     state free
+   =goal>
+     step  refresh-memory
    
-   ?imaginal>
-     state free
+==> 
    
-   =goal> 
-     step       plan-decide
-     - plan-state1-selected-stimulus nil
-     plan-state2-selected-stimulus nil
+   =goal>
+    step attend-stimulus 
    
-   =retrieval>
-     > reward 0
-     state1-selected-stimulus =RESPONSE1
-     state2-selected-stimulus =RESPONSE2
-==>
+   -imaginal>
    
-   ; ENCODE PLANED OUTCOME IN GOAL 
-   =goal> 
-     step       respond 
-     plan-state2-selected-stimulus =RESPONSE2
-   
-   !output! (in plan-state2-retrieve-success() S1 =RESPONSE1 S2 =RESPONSE2)
-)
+   -retrieval>
+ )
 
-(p plan-state2-retrieve-failure-left
-   "Plan STATE2: failure
-   Encode default response :LEFT
-   "
+(p refresh-failure
+ "failure refresh"
+  ?imaginal>
+     state free 
+   
    ?retrieval>
      buffer failure
    
-   ?goal>
-     state free
+   =goal>
+     step  refresh-memory
    
-   ?imaginal>
-     state free
-    
-   =goal> 
-     step       plan-decide
-     - plan-state1-selected-stimulus nil
-     plan-state2-selected-stimulus nil
-==>
-   ; ENCODE PLANED OUTCOME IN GOAL 
-   =goal> 
-     step       respond
-     plan-state2-selected-stimulus left
+==> 
    
-   !output! (in plan-state2-random-left() )
-)
-
-(p plan-state2-retrieve-failure-right
-   "Plan STATE2: failure
-   Encode default response :RIGHT
-   "
-   ?retrieval>
-     buffer failure
+   =goal>
+    step attend-stimulus 
    
-   ?goal>
-     state free
+   -imaginal>
    
-   ?imaginal>
-     state free
-    
-   =goal> 
-     step       plan-decide
-     - plan-state1-selected-stimulus nil
-     plan-state2-selected-stimulus nil
-==>
-   ; ENCODE PLANED OUTCOME IN GOAL 
-   =goal> 
-     step       respond
-     plan-state2-selected-stimulus right
-   
-   !output! (in plan-state2-random-right() )
-)
+   -retrieval>
+ )
 
 ;;; ----------------------------------------------------------------
 ;;; RESPONSE SELECTION
 ;;; ----------------------------------------------------------------
-;;; State1: choose-state1-left() and choose-state1-right() compete
-;;; State2: choose-state2-left() and choose-state2-right() compete
+;;; If planed: choose planed action choose-state1-plan-left()/right()
+;;; If not planed: randomly choose actions
+;;; State1: choose-state1-left() and choose-state1-right() 
+;;; State2: choose-state2-left() and choose-state2-right() 
 ;;; ----------------------------------------------------------------
-
-
-
-;;; ----------------------------------------------------------------
-;;; RESPONSE SELECTION: STATE1
-;;; ----------------------------------------------------------------
-
 
 (p choose-state1-left
-   "At STATE1: Choose LEFT stimulus"
+   "At STATE1: Choose planed stimulus"
    ?manual>
      preparation free
      processor free
@@ -579,19 +783,17 @@
    
    =visual>
      kind markov-stimulus
-   
-   
-   ; USE PLAN TO GUIDE CHOOSE-LEFT     
+     stage 1
+        
    =goal>
      isa        phase
-     plan-state1-selected-stimulus left 
      step       respond
 
    =imaginal>
-     status process
-     - state1-left-stimulus nil
-     - state1-right-stimulus nil
-     state1-selected-stimulus nil
+     status process 
+     - curr-state nil
+     next-state nil
+     response left
     
    ?retrieval>
      state free
@@ -602,18 +804,20 @@
      isa punch
      hand left
      finger index
-   =visual>
-   =goal>
-     step       attend-stimulus
-   =imaginal>
-     state1-selected-stimulus left
    
-   !output! (in state1-left())
+   =imaginal>
+   
+   =visual>
+   
+   =goal>
+     step       encode-stimulus 
+
+   !output! (in choose-state1-left)
 )
 
 
 (p choose-state1-right
-   "At STATE1: Choose RIGHT stimulus"
+   "At STATE1: Choose planed stimulus"
    ?manual>
      preparation free
      processor free
@@ -621,18 +825,17 @@
    
    =visual>
      kind markov-stimulus
+     stage 1
         
-   ; USE PLAN TO GUIDE CHOOSE-RIGHT     
    =goal>
      isa        phase
-     plan-state1-selected-stimulus right 
      step       respond
 
    =imaginal>
-     status process
-     - state1-left-stimulus nil
-     - state1-right-stimulus nil
-     state1-selected-stimulus nil
+     status process 
+     - curr-state nil
+     next-state nil
+     response right 
     
    ?retrieval>
      state free
@@ -643,20 +846,16 @@
      isa punch
      hand right
      finger middle
-   =visual>
-   =goal>
-     step       attend-stimulus
-   =imaginal>
-     state1-selected-stimulus right
    
-   !output! (in state1-right())
+   =imaginal>
+   
+   =visual>
+   
+   =goal>
+     step       encode-stimulus 
+
+   !output! (in choose-planed-state1-right)  
 )
-
-
-
-;;; ----------------------------------------------------------------
-;;; RESPONSE SELECTION: STATE2
-;;; ----------------------------------------------------------------
 
 
 (p choose-state2-left
@@ -668,18 +867,21 @@
    
    =visual>
      kind markov-stimulus
+     stage 2
         
-   ; USE PLAN TO GUIDE CHOOSE-RIGHT     
    =goal>
      isa        phase
-     plan-state2-selected-stimulus left 
      step       respond
 
    =imaginal>
-     status process
-     - state2-left-stimulus nil
-     - state2-right-stimulus nil
-     state2-selected-stimulus nil
+     status process 
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     - response nil
+     response left 
+     next-state nil
+     reward nil
     
    ?retrieval>
      state free
@@ -690,18 +892,21 @@
      isa punch
      hand left
      finger index
+   
    =visual>
+   
    =goal>
-     step       attend-stimulus
+     step       encode-stimulus 
    
    =imaginal>
-     state2-selected-stimulus left
-   !output! (in state2-left())
+      response left
+   
+   !output! (in choose-state2-plan-left)
   
 )
 
 (p choose-state2-right
-   "At STATE2: Choose RIGHT stimulus"
+   "At STATE2: Choose LEFT stimulus"
    ?manual>
      preparation free
      processor free
@@ -709,18 +914,21 @@
    
    =visual>
      kind markov-stimulus
+     stage 2
         
-   ; USE PLAN TO GUIDE CHOOSE-RIGHT     
    =goal>
      isa        phase
-     plan-state2-selected-stimulus right 
      step       respond
 
    =imaginal>
-     status process
-     - state2-left-stimulus nil
-     - state2-right-stimulus nil
-     state2-selected-stimulus nil
+     status process 
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     - response nil
+     response right 
+     next-state nil
+     reward nil
     
    ?retrieval>
      state free
@@ -731,156 +939,18 @@
      isa punch
      hand right
      finger middle
+   
    =visual>
-   =goal>
-     step       attend-stimulus
-   =imaginal>
-     state2-selected-stimulus right
-   !output! (in state2-left())
-)
-
-
-
-
-;;; ----------------------------------------------------------------
-;;; ATTEND MARKOV STIMULUS: STATE3
-;;; ----------------------------------------------------------------
-
-(p encode-state3
-   "Encodes the STATE3 (REWARD) in WM" 
-    =visual>
-     kind MARKOV-REWARD
-     stage 3
-     stage =STAGE
-     reward =REWARD
    
-    =goal>
-     isa        phase
-     step       attend-stimulus
-
-   =imaginal>
-     status process 
-     - state1-selected-stimulus nil
-     - state2-selected-stimulus nil
-     state1-selected-stimulus =S1
-     state2-selected-stimulus =S2
-     reward nil
-
-==>
    =goal>
-     isa      phase
-     step     retrieve
-     stage    =STAGE
+     step       encode-stimulus 
    
    =imaginal>
-     reward    =REWARD 
+      response right
    
-   !eval! (trigger-reward =REWARD)
-   !output! (deliver reward =REWARD WM =S1 =S2)
+   !output! (in choose-state2-plan-right)
+  
 )
-
-(p refresh-memory 
-   "Refresh memory of the trial"
-   ?retrieval>
-    state free 
-   
-   ?imaginal>
-     state free
-     buffer full
-   
-   
-   =goal>
-     isa      phase
-     step     retrieve
-   
-   =imaginal>
-      isa wm
-      status process
-      state1-left-stimulus =S11
-      state1-right-stimulus =S12
-      state2-left-stimulus =S21
-      state2-right-stimulus =S22
-      state1-selected-stimulus =R1
-      state2-selected-stimulus =R2
-      reward =R
-
-==>
-   =goal>
-   
-   -imaginal> 
-   
-   -visual>
-   
-   +retrieval> 
-     status process
-     state1-left-stimulus =S11
-     state1-right-stimulus =S12
-     state2-left-stimulus =S21
-     state2-right-stimulus =S22
-     state1-selected-stimulus =R1
-     state2-selected-stimulus =R2
-     reward =R
-    
-   !output! (refresh-memory  =R1 =R2 =R)
-
-)
-
-(p refresh-memory-success 
-    "If successfully refreshed memory, clear retrieval buffer and reset goal buffer"
-   ?retrieval>
-    state free 
-    buffer full
-   
-   ?imaginal>
-     state free
-     buffer empty
-   
-   ?visual> 
-     state free 
-     buffer empty
-   
-   ?goal>
-    state free
-    buffer full
-   
-   =goal>
-     isa      phase
-     step     retrieve 
-
-==>
-   ; RESET GOAL
-   =goal> 
-     step       attend-fixation 
-     plan-state1-selected-stimulus nil
-     plan-state2-selected-stimulus nil
-   
-   -retrieval>
-   
-   !output! (refresh-memory-success)
-)
-
-(p refresh-memory-failure 
-    "If refreshed memory failed, clear retrieval buffer and reset goal buffer"
-   ?retrieval>
-     buffer failure
-     state free
-   
-   =goal>
-     isa      phase
-     step     retrieve 
-
-==>
-   ; RESET GOAL
-   =goal> 
-     step       attend-fixation 
-     plan-state1-selected-stimulus nil
-     plan-state2-selected-stimulus nil
-   
-   -retrieval>
-   
-   !output! (refresh-memory-fail)
-)
-
 
 ;;; ----------------------------------------------------------------
 ;;; DONE
@@ -906,7 +976,7 @@
    
    =goal>
      isa        phase
-     step       attend-fixation
+     step       attend-stimulus 
 ==>
    !stop!
 

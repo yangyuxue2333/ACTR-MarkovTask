@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model1.lisp
-;;; Version     :v1.1
+;;; Version     :v1.2
 ;;;
 ;;; Description : model-free 
 ;;;
@@ -58,11 +58,25 @@
 ;;;         is added when state2 is encoded (!!deprecated!!)
 ;;; 
 ;;; Chunk Type descriptions:
-;;; - markov-stimulus: Contain the state information (0,1,2,3), left and right
-;;;                    stimulus properties
+;;; - markov-stimulus: Contain the state information (STATE, STAGE, LEFT-STIMULUS, RIGHT-STIMULUS)
+;; MARKOV-STIMULUS0-0
+;;    STATE  A
+;;    KIND  MARKOV-STIMULUS
+;;    SCREEN-POS  MARKOV-STIMULUS-LOCATION0-0
+;;    COLOR  GREEN
+;;    STAGE  1
+;;    LEFT-STIMULUS  A1
+;;    RIGHT-STIMULUS  A2
 ;;;
-;;; - wm: Contains stimuli properties from two states, selected response, and 
-;;;       reward amount
+;;; - WM: contains CURR-STATE, NEXT-STATE, RESPONSE, and REWARD
+;; M-A1
+;;    STATUS  PROCESS
+;;    LEFT-STIMULUS  A1
+;;    RIGHT-STIMULUS  A2
+;;    REWARD  NONE
+;;    CURR-STATE  A
+;;    NEXT-STATE  B
+;;    RESPONSE  LEFT
 ;;;
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -74,15 +88,16 @@
 ;;; p find-screen ()  
 ;;; p process-fixation()
 ;;; ===== state1 =====
-;;; p encode-state1-stimulus ()   
+;;; p attend-state1()
 ;;; |--- p choose-state1-left()
 ;;; |--- p choose-state1-right()
+;;; p encode-state1 ()   
 ;;; ===== state2 =====
-;;; p encode-state2-stimulus ()  
+;;; p attend-state2 ()  
 ;;; |--- p choose-state2-left()
 ;;; |--- p choose-state2-right()
-;;; ===== feedback =====
-;;; p encode-reward() 
+;;; ===== feedback ===== 
+;;; p encode-state2 ()  
 ;;; p done()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -92,6 +107,7 @@
 (chunk-type (markov-stimulus (:include visual-object))
       kind 
       stage
+      state
       color
       left-stimulus
       right-stimulus)
@@ -99,6 +115,7 @@
 (chunk-type (markov-stimulus-location (:include visual-location))
       kind
       stage
+      state
       color
       left-stimulus
       right-stimulus
@@ -110,14 +127,23 @@
       stage
       reward)
 
+;; (chunk-type wm    
+;;       status
+;;       state1-left-stimulus
+;;       state1-right-stimulus 
+;;       state2-left-stimulus
+;;       state2-right-stimulus 
+;;       state1-selected-stimulus
+;;       state2-selected-stimulus
+;;       reward)
+
 (chunk-type wm    
       status
-      state1-left-stimulus
-      state1-right-stimulus 
-      state2-left-stimulus
-      state2-right-stimulus 
-      state1-selected-stimulus
-      state2-selected-stimulus
+      curr-state
+      left-stimulus
+      right-stimulus
+      next-state
+      response
       reward)
 
 (chunk-type phase
@@ -127,9 +153,11 @@
       plan-state1-selected-stimulus
       plan-state2-selected-stimulus)
 
+
+
 ;;; --------- DM ---------
 (add-dm 
-  (start-trial isa phase step attend-fixation)
+  (start-trial isa phase step attend-stimulus)
 )
 
 
@@ -139,6 +167,10 @@
 
 (p prepare-wm
    "Init task, prepare WM"
+   ?visual>
+    buffer empty
+    state free
+   
    ?imaginal>
      buffer empty
      state free
@@ -154,7 +186,7 @@
 
    =goal>
      isa      phase
-     step     attend-fixation
+     step     attend-stimulus 
      ;motivation 10
 ==>
    +imaginal>
@@ -182,20 +214,22 @@
    "Attend to the fixation cross STATE0"
     ?visual>
       state    free
+   
     =visual>
       text     T
       value    "+"
+   
     ?imaginal>
       state    free
+   
     =goal>
      isa        phase
-     step       attend-fixation 
+     step       attend-stimulus  
 ==>
     =goal>
       step       attend-stimulus
       stage      0
       
-   
     ;!output! (in process-fixation())
 )
 
@@ -209,21 +243,22 @@
 ;;; state3: Rewards +10
 ;;; ----------------------------------------------------------------
 
-(p encode-state1
+(p attend-state1
    "Encodes the STATE1 stimulus in WM"
    =visual>
      kind MARKOV-STIMULUS
      stage 1
      stage =STAGE
+     state =STATE
      left-stimulus  =L
      right-stimulus =R
      
 
    =imaginal>
      status process 
-     state1-left-stimulus nil
-     state1-right-stimulus nil
-     state1-selected-stimulus nil
+     curr-state nil
+     left-stimulus nil
+     right-stimulus nil
 
    ?retrieval>
      state free
@@ -240,52 +275,94 @@
    =visual>
    
    =imaginal> 
-     state1-left-stimulus   =L
-     state1-right-stimulus  =R
+     curr-state =STATE
+     left-stimulus  =L
+     right-stimulus =R
    
-   !output! (in encode-state2 =L =R)
+   !output! (in attend-state1 =STATE =L =R)
     
 )
 
-(p encode-state2
+(p encode-state1
    "Encodes the STATE2 stimulus in WM"
    =visual>
      kind MARKOV-STIMULUS
      stage 2
      stage =STAGE
+     state =STATE
      left-stimulus  =L
      right-stimulus =R
      
    =imaginal>
      status process 
-     - state1-selected-stimulus nil
-     state2-left-stimulus nil
-     state2-right-stimulus nil
-     state2-selected-stimulus nil
+     - curr-state nil
+     - response nil
+     next-state nil
+     reward nil
 
    ?retrieval>
      state free
      buffer empty
+   
+   ?manual> 
+     state free
 
    =goal>
      isa        phase
-     step       attend-stimulus 
+     step       encode-stimulus 
 ==>
    =goal> 
-     step       respond
+     step       refresh-memory 
      stage      =STAGE
    
    =visual>
    
    =imaginal>
-     state2-left-stimulus   =L
-     state2-right-stimulus  =R
+     next-state =STATE
+     reward none
    
-   !output! (in encode-state2 =L =R)
-   ;!eval! (trigger-reward 0) ; CLEAR REWARD 
+   ;-imaginal>
+   
+   !output! (in encode-state1 =L =R)
 )
 
-(p encode-state3
+
+(p attend-state2
+  =visual>
+     kind MARKOV-STIMULUS
+     stage 2
+     stage =STAGE
+     state =STATE
+     left-stimulus  =L
+     right-stimulus =R
+   
+   =goal> 
+     step       attend-stimulus
+     stage      =STAGE
+   
+   ?imaginal>
+     state free
+     buffer empty
+   
+==> 
+   +imaginal>
+     isa wm
+     status process
+     curr-state =STATE
+     left-stimulus  =L
+     right-stimulus =R
+     response nil
+     next-state nil
+     reward nil
+   
+   =goal>
+     step       respond
+   
+   =visual>
+   !output! (in encode-state2 =L =R)
+)
+
+(p encode-state2
    "Encodes the STATE3 (REWARD) in WM" 
     =visual>
      kind MARKOV-REWARD
@@ -295,30 +372,119 @@
    
     =goal>
      isa        phase
-     step       attend-stimulus
+     step       encode-stimulus
 
    =imaginal>
-     status process 
-     - state1-selected-stimulus nil
-     - state2-selected-stimulus nil
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     - response nil
+     next-state nil
      reward nil
+     
 
 ==>
    =goal> 
-     step       attend-fixation 
+     step       refresh-memory  
      stage      =STAGE
    
    =imaginal>
      reward    =REWARD
+     next-state none
    
    -visual>
    
-   -imaginal>
+   ;-imaginal>
    
    !eval! (trigger-reward =REWARD)
    
-   !output! (deliver reward =REWARD)
+   !output! (in  encode-state2 reward =REWARD)
 )
+
+
+(p refresh-memory
+  "refresh memorty "
+   ?imaginal>
+     state free
+     buffer full
+   
+   ?retrieval>
+     state free
+     buffer empty
+   
+   =goal>
+     step  refresh-memory
+   
+   =imaginal>
+       status  PROCESS
+       left-stimulus  =LEFT
+       right-stimulus  =RIGHT
+       reward  =R
+       curr-state  =CURR
+       next-state  =NEXT
+       response  =RESP
+   
+==>
+   
+   =goal>
+   
+   =imaginal>
+   
+   +retrieval>
+       isa wm
+       status  PROCESS
+       left-stimulus  =LEFT
+       right-stimulus  =RIGHT
+       reward  =R
+       curr-state  =CURR
+       next-state  =NEXT
+       response  =RESP
+)
+
+(p refresh-success
+ "success refresh"
+  ?imaginal>
+     state free
+     buffer full
+   
+   ?retrieval>
+     state free
+     buffer full
+   
+   =goal>
+     step  refresh-memory
+   
+==> 
+   
+   =goal>
+    step attend-stimulus 
+   
+   -imaginal>
+   
+   -retrieval>
+ )
+
+(p refresh-failure
+ "failure refresh"
+  ?imaginal>
+     state free 
+   
+   ?retrieval>
+     buffer failure
+   
+   =goal>
+     step  refresh-memory
+   
+==> 
+   
+   =goal>
+    step attend-stimulus 
+   
+   -imaginal>
+   
+   -retrieval>
+ )
+
 ;;; ----------------------------------------------------------------
 ;;; RESPONSE SELECTION
 ;;; ----------------------------------------------------------------
@@ -335,16 +501,17 @@
    
    =visual>
      kind markov-stimulus
+     stage 1
         
    =goal>
      isa        phase
      step       respond
 
    =imaginal>
-     status process
-     - state1-left-stimulus nil
-     - state1-right-stimulus nil
-     state1-selected-stimulus nil
+     status process 
+     - curr-state nil
+     next-state nil
+     response nil
     
    ?retrieval>
      state free
@@ -355,13 +522,16 @@
      isa punch
      hand left
      finger index
-   =visual>
-   =goal>
-     step       attend-stimulus
-   =imaginal>
-     state1-selected-stimulus left
    
-   !output! (in state1-left())
+   =visual>
+   
+   =goal>
+     step       encode-stimulus 
+   
+   =imaginal>
+      response left
+   
+   !output! (in state1-left)
   
 )
 
@@ -374,16 +544,17 @@
    
    =visual>
      kind markov-stimulus
+     stage 1
         
    =goal>
      isa        phase
      step       respond
 
    =imaginal>
-     status process
-     - state1-left-stimulus nil
-     - state1-right-stimulus nil
-     state1-selected-stimulus nil
+     status process 
+     - curr-state nil
+     next-state nil
+     response nil
     
    ?retrieval>
      state free
@@ -394,13 +565,16 @@
      isa punch
      hand right
      finger middle
-   =visual>
-   =goal>
-     step       attend-stimulus
-   =imaginal>
-     state1-selected-stimulus right
    
-   !output! (in state1-right())
+   =visual>
+   
+   =goal>
+     step       encode-stimulus 
+   
+   =imaginal>
+      response right
+   
+   !output! (in state1-right)
   
 )
 
@@ -414,16 +588,20 @@
    
    =visual>
      kind markov-stimulus
+     stage 2
         
    =goal>
      isa        phase
      step       respond
 
    =imaginal>
-     status process
-     - state2-left-stimulus nil
-     - state2-right-stimulus nil
-     state2-selected-stimulus nil
+     status process 
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     response nil
+     next-state nil
+     reward nil
     
    ?retrieval>
      state free
@@ -434,12 +612,15 @@
      isa punch
      hand left
      finger index
+   
    =visual>
+   
    =goal>
-     step       attend-stimulus
+     step       encode-stimulus 
    
    =imaginal>
-     state2-selected-stimulus left
+      response left
+   
    !output! (in state2-left())
   
 )
@@ -453,16 +634,20 @@
    
    =visual>
      kind markov-stimulus
+     stage 2
         
    =goal>
      isa        phase
      step       respond
 
    =imaginal>
-     status process
-     - state2-left-stimulus nil
-     - state2-right-stimulus nil
-     state2-selected-stimulus nil
+     status process 
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     response nil
+     next-state nil
+     reward nil
     
    ?retrieval>
      state free
@@ -473,12 +658,16 @@
      isa punch
      hand right
      finger middle
+   
    =visual>
+   
    =goal>
-     step       attend-stimulus
+     step       encode-stimulus 
+   
    =imaginal>
-     state2-selected-stimulus right
-   !output! (in state2-left())
+      response right
+   
+   !output! (in state2-left)
 )
 
 
@@ -507,7 +696,7 @@
    
    =goal>
      isa        phase
-     step       attend-fixation
+     step       attend-stimulus 
 ==>
    !stop!
 

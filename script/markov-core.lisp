@@ -83,7 +83,7 @@
          :lf 0.1    ;immediately retrieve memory
          :bll .5    ;base-level activation
          ;:mas 4.0
-         :rt -2  ;retrieval threshold
+         :rt -5  ;retrieval threshold
          :ul t
          ;:epl t ; Enable Production Learning
          :egs 0.1
