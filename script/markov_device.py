@@ -755,18 +755,6 @@ class MarkovACTR(MarkovState):
                                             'state_frequency',
                                             'reward_frequency'])
 
-    def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
-        df = self.df_behaviors().reset_index()
-        df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
-        df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
-        df['received_reward_sum'] = df['received_reward_norm'].cumsum()
-        df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
-        df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
-        df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
-        df['optimal_response_sum'] = df['optimal_response'].cumsum()
-        df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
-        return df
-
     def calculate_stay_probability(self):
         """
         Calculate the probability of stay:
@@ -823,6 +811,45 @@ class MarkovACTR(MarkovState):
         if norm:
             df[':utility'] = (df[':utility'] - df[':utility'].min()) / (df[':utility'].max() - df[':utility'].min())
         return df
+
+    def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
+        df = self.df_behaviors().reset_index()
+        df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
+        df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
+        df['received_reward_sum'] = df['received_reward_norm'].cumsum()
+        df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
+        df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
+        df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
+        df['optimal_response_sum'] = df['optimal_response'].cumsum()
+        df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
+        return df
+
+    def df_postprocess_actr_traces(self):
+        # production trace
+        df1 = self.df_actr_production_traces(parameter_name=':utility')
+        df1['index_bin'] = pd.cut(df1['index'], 10, labels=False, ordered=False, right=False)
+        df1['state'] = df1.apply(lambda x: 'STATE1' if ('CHOOSE-STATE1' in x['action']) else 'STATE2', axis=1)
+        df1['response'] = df1.apply(lambda x: 'LEFT' if ('LEFT' in x['action']) else 'RIGHT', axis=1)
+        df1 = df1.fillna(0.0)
+
+        # memory trace
+        try:
+            df21 = self.df_actr_chunk_traces(parameter_name=':Reference-Count')
+            df22 = self.df_actr_chunk_traces(parameter_name=':Last-Retrieval-Activation').fillna(0.0)
+            df2 = pd.merge(df21, df22)
+            df2['index_bin'] = pd.cut(df2['index'], 10, labels=False)
+            df2.replace(to_replace=[None], value=np.nan, inplace=True)
+            # df2['memory_type'] = df2.apply(lambda x: 'non-reward' if 'M0' in x['memory'] else 'reward', axis=1)
+            df2['memory_type'] = 'non-reward'
+            df2.loc[df2['memory'].str.endswith(('B1', 'B3', 'C1', 'C3')), 'memory_type'] = 'reward'
+        except:
+            print('no memory trace')
+            df2 = None
+        finally:
+            df1 = df1.astype({'index_bin': float, ':utility': float})
+            df2 = df2.astype({'index_bin': float, ':Reference-Count': float, ':Last-Retrieval-Activation': float})
+            return df1, df2
+
 
     def __str__(self):
         header = "######### SETUP MODEL " + self.model + " #########"
@@ -958,6 +985,18 @@ class MarkovHuman(MarkovState):
             lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0), axis=1)
         return df
 
+    def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
+        df = self.df_behaviors().reset_index()
+        df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
+        df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
+        df['received_reward_sum'] = df['received_reward_norm'].cumsum()
+        df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
+        df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
+        df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
+        df['optimal_response_sum'] = df['optimal_response'].cumsum()
+        df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
+        return df
+
     def __str__(self):
         header = "######### SETUP MODEL " + self.kind + " #########\n" + str(self.task_parameters)
         return header
@@ -967,9 +1006,8 @@ class MarkovHuman(MarkovState):
 
 
 global convergence
-convergence = 10
-
-def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=.7):
+convergence = 100
+def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=.6, verbose=False):
     """
     simulate markov model
     thresh determines whether the model learns optimal action sequence
@@ -985,10 +1023,10 @@ def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, th
 
     perf = df['optimal_response_sum_prop'].loc[len(df) - 1]
     if perf >= thresh:
-        print(m)
-        return df
+        if verbose: print(m)
+        return m
     else:
-        print('>>> Not converged yet', perf, '<<<')
+        if verbose: print('>>> Not converged yet %.2f <<< [threshold = %.2f]' % (perf, thresh))
         convergence -= 1
         return simulate(model, n, task_params, actr_params, thresh)
 
