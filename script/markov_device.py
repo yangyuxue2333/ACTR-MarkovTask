@@ -797,12 +797,15 @@ class MarkovACTR(MarkovState):
         df = pd.DataFrame([s.actr_chunk_trace[parameter_name] for s in self.log], columns=self.actr_chunk_names).reset_index()
         return pd.melt(df, id_vars='index', var_name='memory', value_name=parameter_name)
 
-    def df_actr_production_traces(self, parameter_name=':utility'):
+    def df_actr_production_traces(self, parameter_name=':utility', norm=True):
         """
         Return a production utility trace
         """
         df = pd.DataFrame([s.actr_production_trace for s in self.log], columns=self.actr_production_names).reset_index()
-        return pd.melt(df, id_vars='index', var_name='action', value_name=parameter_name)
+        df = pd.melt(df, id_vars='index', var_name='action', value_name=parameter_name)
+        if norm:
+            df[':utility'] = (df[':utility'] - df[':utility'].min()) / (df[':utility'].max() - df[':utility'].min())
+        return df
 
     def __str__(self):
         header = "######### SETUP MODEL " + self.model + " #########"
