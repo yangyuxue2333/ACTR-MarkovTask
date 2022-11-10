@@ -167,11 +167,6 @@
 
 
 ;;; --------- DM ---------
-(add-dm 
-  (start-trial isa phase step attend-stimulus motivation 0 time-onset 0.0 previous-reward 0.0)
-)
-
-
 ;;; ------------------------------------------------------------------
 ;;; INITIALIZATION
 ;;; ------------------------------------------------------------------
@@ -982,4 +977,4 @@
 
 )
 
-(goal-focus start-trial)
+;; (goal-focus start-trial)

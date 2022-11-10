@@ -127,15 +127,6 @@
       stage
       reward)
 
-;; (chunk-type wm    
-;;       status
-;;       state1-left-stimulus
-;;       state1-right-stimulus 
-;;       state2-left-stimulus
-;;       state2-right-stimulus 
-;;       state1-selected-stimulus
-;;       state2-selected-stimulus
-;;       reward)
 
 (chunk-type wm    
       status
@@ -149,17 +140,19 @@
 (chunk-type phase
       step
       stage
-      motivation
-      plan-state1-selected-stimulus
-      plan-state2-selected-stimulus)
+      plan-state1
+      plan-state1-response
+      plan-state2
+      plan-state2-response
+      motivation                    ;;; mental counts
+      updated-motivation            ;;; mental counts
+      time-onset                    ;;; mental clock
+      time-duration                 ;;; mental clock
+      previous-reward)              ;;; previous reward given
 
 
 
 ;;; --------- DM ---------
-(add-dm 
-  (start-trial isa phase step attend-stimulus)
-)
-
 
 ;;; ------------------------------------------------------------------
 ;;; INITIALIZATION
@@ -702,4 +695,4 @@
 
 )
 
-(goal-focus start-trial)
+;; (goal-focus start-trial)

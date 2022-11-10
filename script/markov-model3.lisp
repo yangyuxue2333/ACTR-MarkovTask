@@ -177,9 +177,6 @@
 
 
 ;;; --------- DM ---------
-(add-dm 
-  (start-trial isa phase step attend-stimulus motivation 0 time-onset 0.0 previous-reward 0.0)
-)
 
 
 ;;; ------------------------------------------------------------------
@@ -216,7 +213,9 @@
      status process
    
    =goal>
-     motivation =R
+     ; ucomment this line allow motivation updated based on previous reward value
+     ; otherwise motivation is fixed for each trial
+     ;motivation =R
       
    !eval! (trigger-reward 0) ; CLEAR REWARD  
    
@@ -1062,92 +1061,6 @@
 )
 
 
-;; (p choose-state1-left
-;;    "At STATE1: Choose LEFT stimulus"
-;;    ?manual>
-;;      preparation free
-;;      processor free
-;;      execution free
-   
-;;    =visual>
-;;      kind markov-stimulus
-;;      stage 1
-        
-;;    =goal>
-;;      isa        phase
-;;      step       respond
-
-;;    =imaginal>
-;;      status process 
-;;      - curr-state nil
-;;      next-state nil
-;;      response nil
-    
-;;    ?retrieval>
-;;      state free
-;;      buffer empty
-
-;; ==>
-;;    +manual>
-;;      isa punch
-;;      hand left
-;;      finger index
-   
-;;    =visual>
-   
-;;    =goal>
-;;      step       encode-stimulus 
-   
-;;    =imaginal>
-;;       response left
-   
-;;    !output! (in state1-left)
-  
-;; )
-
-;; (p choose-state1-right
-;;    "At STATE1: Choose RIGHT stimulus"
-;;    ?manual>
-;;      preparation free
-;;      processor free
-;;      execution free
-   
-;;    =visual>
-;;      kind markov-stimulus
-;;      stage 1
-        
-;;    =goal>
-;;      isa        phase
-;;      step       respond
-
-;;    =imaginal>
-;;      status process 
-;;      - curr-state nil
-;;      next-state nil
-;;      response nil
-    
-;;    ?retrieval>
-;;      state free
-;;      buffer empty
-
-;; ==>
-;;    +manual>
-;;      isa punch
-;;      hand right
-;;      finger middle
-   
-;;    =visual>
-   
-;;    =goal>
-;;      step       encode-stimulus 
-   
-;;    =imaginal>
-;;       response right
-   
-;;    !output! (in state1-right)
-  
-;; )
-
 (p choose-state2-left
    "At STATE2: Choose LEFT stimulus"
    ?manual>
@@ -1242,101 +1155,6 @@
   
 )
 
-
-
-;; (p choose-state2-left
-;;    "At STATE2: Choose LEFT stimulus"
-;;    ?manual>
-;;      preparation free
-;;      processor free
-;;      execution free
-   
-;;    =visual>
-;;      kind markov-stimulus
-;;      stage 2
-        
-;;    =goal>
-;;      isa        phase
-;;      step       respond
-
-;;    =imaginal>
-;;      status process 
-;;      - curr-state nil
-;;      - left-stimulus nil
-;;      - right-stimulus nil
-;;      response nil
-;;      next-state nil
-;;      reward nil
-    
-;;    ?retrieval>
-;;      state free
-;;      buffer empty
-
-;; ==>
-;;    +manual>
-;;      isa punch
-;;      hand left
-;;      finger index
-   
-;;    =visual>
-   
-;;    =goal>
-;;      step       encode-stimulus 
-   
-;;    =imaginal>
-;;       response left
-   
-;;    !output! (in state2-left())
-  
-;; )
-
-;; (p choose-state2-right
-;;    "At STATE2: Choose RIGHT stimulus"
-;;    ?manual>
-;;      preparation free
-;;      processor free
-;;      execution free
-   
-;;    =visual>
-;;      kind markov-stimulus
-;;      stage 2
-        
-;;    =goal>
-;;      isa        phase
-;;      step       respond
-
-;;    =imaginal>
-;;      status process 
-;;      - curr-state nil
-;;      - left-stimulus nil
-;;      - right-stimulus nil
-;;      response nil
-;;      next-state nil
-;;      reward nil
-    
-;;    ?retrieval>
-;;      state free
-;;      buffer empty
-
-;; ==>
-;;    +manual>
-;;      isa punch
-;;      hand right
-;;      finger middle
-   
-;;    =visual>
-   
-;;    =goal>
-;;      step       encode-stimulus 
-   
-;;    =imaginal>
-;;       response right
-   
-;;    !output! (in state2-left)
-;; )
-
-
-
 ;;; ----------------------------------------------------------------
 ;;; DONE
 ;;; ----------------------------------------------------------------
@@ -1367,4 +1185,4 @@
 
 )
 
-(goal-focus start-trial)
+;; (goal-focus start-trial)
