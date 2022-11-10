@@ -755,6 +755,18 @@ class MarkovACTR(MarkovState):
                                             'state_frequency',
                                             'reward_frequency'])
 
+    def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
+        df = self.df_behaviors().reset_index()
+        df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
+        df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
+        df['received_reward_sum'] = df['received_reward_norm'].cumsum()
+        df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
+        df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
+        df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
+        df['optimal_response_sum'] = df['optimal_response'].cumsum()
+        df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
+        return df
+
     def calculate_stay_probability(self):
         """
         Calculate the probability of stay:
@@ -952,3 +964,49 @@ class MarkovHuman(MarkovState):
 
     def __repr__(self):
         return self.__str__()
+
+
+global convergence
+convergence = 10
+
+def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=.7):
+    """
+    simulate markov model
+    thresh determines whether the model learns optimal action sequence
+    """
+    global convergence
+    if convergence < 0:
+        print('>>> Failed to converge <<<')
+        return
+    m = MarkovACTR(setup=False)
+    m.setup(model=model, verbose=False, task_params=task_params, actr_params=actr_params)
+    m.run_experiment(n)
+    df = m.df_postprocess_behaviors()
+
+    perf = df['optimal_response_sum_prop'].loc[len(df) - 1]
+    if perf >= thresh:
+        print(m)
+        return df
+    else:
+        print('>>> Not converged yet', perf, '<<<')
+        convergence -= 1
+        return simulate(model, n, task_params, actr_params, thresh)
+
+
+def try_simulation_example():
+    r, r1, r2 = 2, 5, 10
+    n = 50
+    thresh = 0.6
+    model1 = "markov-model1"
+    model2 = "markov-model2"
+    model3 = "markov-model3"
+
+    actr_params = {'seed': '[100, 0]', 'v': 'nil', 'ans': 0.2, 'egs': 0.2, 'lf': 0.5, 'bll': 0.5}
+    task_params = {'REWARD': {'B1': r, 'B2': r, 'C1': r, 'C2': r}}
+    task_params1 = {'REWARD': {'B1': r1, 'B2': r1, 'C1': r1, 'C2': r1}}
+    task_params2 = {'REWARD': {'B1': r2, 'B2': r2, 'C1': r2, 'C2': r2}}
+
+    df1 = simulate(model1, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
+    df2 = simulate(model2, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
+    df3 = simulate(model3, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
+    return df1, df2, df3
