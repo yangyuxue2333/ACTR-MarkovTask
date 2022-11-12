@@ -396,8 +396,8 @@ class MarkovACTR(MarkovState):
         self.set_task_parameters(task_params)
 
         # goal focus
-        mot = str(np.max(list(task_params['REWARD'].values())))
-        actr.define_chunks(['start-trial', 'isa', 'phase', 'step', 'attend-stimulus', 'motivation', mot, 'time-onset', '0.0', 'previous-reward', '0.0'])
+        mot = str(np.max(list(self.task_parameters['REWARD'].values())))
+        actr.define_chunks(['start-trial', 'isa', 'phase', 'step', 'attend-stimulus', 'motivation', mot, 'time-onset', '0.0', 'previous-reward', '0.0', 'current-reward', '0.0'])
         actr.goal_focus('start-trial')
 
         window = actr.open_exp_window("MARKOV TASK", width=500, height=250, visible=False)

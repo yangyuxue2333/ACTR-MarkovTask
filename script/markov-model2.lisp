@@ -162,6 +162,7 @@
       updated-motivation            ;;; mental counts
       time-onset                    ;;; mental clock
       time-duration                 ;;; mental clock
+      current-reward                ;;; current reward given
       previous-reward)              ;;; previous reward given
 
 
@@ -658,6 +659,7 @@
    =goal> 
      step       refresh-memory  
      stage      =STAGE
+     current-reward =REWARD
    
    =imaginal>
      reward    =REWARD

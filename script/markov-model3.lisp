@@ -172,6 +172,7 @@
       updated-motivation            ;;; mental counts
       time-onset                    ;;; mental clock
       time-duration                 ;;; mental clock
+      current-reward                ;;; current reward given
       previous-reward)              ;;; previous reward given
 
 
@@ -864,6 +865,7 @@
      stage      =STAGE
      ; allows ACT-R set MOTIVATION based on previous trial's reward
      previous-reward =REWARD 
+     current-reward  =REWARD
    
    =imaginal>
      reward    =REWARD
