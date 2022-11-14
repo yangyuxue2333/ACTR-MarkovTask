@@ -1044,7 +1044,7 @@ def try_simulation_example():
     task_params1 = {'REWARD': {'B1': r1, 'B2': r1, 'C1': r1, 'C2': r1}}
     task_params2 = {'REWARD': {'B1': r2, 'B2': r2, 'C1': r2, 'C2': r2}}
 
-    df1 = simulate(model1, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
-    df2 = simulate(model2, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
-    df3 = simulate(model3, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
+    m1 = simulate(model1, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
+    m2 = simulate(model2, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
+    m3 = simulate(model3, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
     return df1, df2, df3
