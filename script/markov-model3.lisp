@@ -89,40 +89,40 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Productions: 
-;;; ===== fixation =====
-;;; p prepare-wm ()
-;;; p find-screen ()  
-;;; p process-fixation()
-;;; ===== state1 =====
-;;; p attend-state1()
-;;; p plan-state1 ()  
-;;; |--- MOT > 0: p plan-state1-start ()  
-;;; |--------- p PLAN-BACKWARD-AT-STAGE1-STATE2()
-;;; |--------- p PLAN-BACKWARD-AT-STAGE1-STATE1()
-;;; |--------- p PLAN-BACKWARD-AT-STAGE1-COMPLETE()
-;;; |--- MOT <= 0: p plan-state1-retrieve-skip()
-;;; |------ p plan-state1-random-left()  ;;; compete
-;;; |--------- p choose-state1-left()
-;;; |------ p plan-state1-random-right() ;;; compete
-;;; |--------- p choose-state1-right()
-;;; p refresh-memory() 
-;;; p refresh-memory-success()
-;;; ===== state2 =====
-;;; p encode-state2-stimulus ()  
-;;; p plan-state2-retrieve ()  
-;;; |--- MOT > 0: p plan-state2-start ()  
-;;; |--------- p PLAN-BACKWARD-AT-STAGE2()
-;;; |--------- p PLAN-BACKWARD-AT-STAGE2-COMPLETE()
-;;; |--- MOT <= 0: p plan-state2-retrieve-skip()
-;;; |------ p plan-state2-random-left()  ;;; compete
-;;; |--------- p choose-state2-left()
-;;; |------ p plan-state2-random-right() ;;; compete
-;;; |--------- p choose-state2-right() 
-;;; ===== feedback =====
-;;; p encode-state3() 
-;;; p refresh-memory() 
-;;; p refresh-memory-success()
-;;; p done()
+;;; ===== FIXATION =====
+;;; P PREPARE-WM ()
+;;; P FIND-SCREEN ()  
+;;; P PROCESS-FIXATION()
+;;; ===== STATE1 =====
+;;; P ATTEND-STATE1()
+;;; P PLAN-STATE1 ()  
+;;; |--- MOT > 0: P PLAN-STATE1-START ()  
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-STATE2()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-STATE1()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-COMPLETE()
+;;; |--- MOT <= 0: P PLAN-STATE1-RETRIEVE-SKIP()
+;;; |------ P PLAN-STATE1-RANDOM-LEFT()  ;;; COMPETE
+;;; |--------- P CHOOSE-STATE1-LEFT()
+;;; |------ P PLAN-STATE1-RANDOM-RIGHT() ;;; COMPETE
+;;; |--------- P CHOOSE-STATE1-RIGHT()
+;;; P REFRESH-MEMORY() 
+;;; P REFRESH-MEMORY-SUCCESS()
+;;; ===== STATE2 =====
+;;; P ENCODE-STATE2-STIMULUS ()  
+;;; P PLAN-STATE2-RETRIEVE ()  
+;;; |--- MOT > 0: P PLAN-STATE2-START ()  
+;;; |--------- P PLAN-BACKWARD-AT-STAGE2()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE2-COMPLETE()
+;;; |--- MOT <= 0: P PLAN-STATE2-RETRIEVE-SKIP()
+;;; |------ P PLAN-STATE2-RANDOM-LEFT()  ;;; COMPETE
+;;; |--------- P CHOOSE-STATE2-LEFT()
+;;; |------ P PLAN-STATE2-RANDOM-RIGHT() ;;; COMPETE
+;;; |--------- P CHOOSE-STATE2-RIGHT() 
+;;; ===== FEEDBACK =====
+;;; P ENCODE-STATE3() 
+;;; P REFRESH-MEMORY() 
+;;; P REFRESH-MEMORY-SUCCESS()
+;;; P DONE() 
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -83,23 +83,25 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Productions: 
-;;; ===== fixation =====
-;;; p prepare-wm ()
-;;; p find-screen ()  
-;;; p process-fixation()
-;;; ===== state1 =====
-;;; p attend-state1()
-;;; |--- p choose-state1-left()
-;;; |--- p choose-state1-right()
-;;; p encode-state1 ()   
-;;; ===== state2 =====
-;;; p attend-state2 ()  
-;;; |--- p choose-state2-left()
-;;; |--- p choose-state2-right()
-;;; ===== feedback ===== 
-;;; p encode-state2 ()  
-;;; p done()
-;;;;
+;;; ===== FIXATION ===== 
+;;; P PREPARE-WM () 
+;;; P FIND-SCREEN () 
+;;; P PROCESS-FIXATION() ;
+;; ===== STATE1 =====
+;;; P ATTEND-STATE1() 
+;;; |--- P CHOOSE-STATE1-LEFT() 
+;;; |--- P CHOOSE-STATE1-RIGHT() 
+;;; P ENCODE-STATE1 () 
+;;; P REFRESH-MEMORY () 
+;;; ===== STATE2 ===== 
+;;; P ATTEND-STATE2 () 
+;;; |--- P CHOOSE-STATE2-LEFT() 
+;;; |--- P CHOOSE-STATE2-RIGHT() 
+;;; ===== REWAR ===== 
+;;; P ENCODE-STATE2 () 
+;;; P REFRESH-MEMORY ()
+;;; P DONE() ;;;;
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 

@@ -1017,7 +1017,7 @@ def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, th
         print('>>> Failed to converge <<<')
         return
     m = MarkovACTR(setup=False)
-    m.setup(model=model, verbose=False, task_params=task_params, actr_params=actr_params)
+    m.setup(model=model, verbose=verbose, task_params=task_params, actr_params=actr_params)
     m.run_experiment(n)
     df = m.df_postprocess_behaviors()
 

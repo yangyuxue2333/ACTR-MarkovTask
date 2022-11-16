@@ -87,33 +87,33 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Productions: 
-;;; ===== fixation =====
-;;; p prepare-wm ()
-;;; p find-screen ()  
-;;; p process-fixation()
-;;; ===== state1 =====
-;;; p attend-state1()
-;;; p plan-state1 ()  
-;;; |--------- p PLAN-BACKWARD-AT-STAGE1-STATE2()
-;;; |--------- p PLAN-BACKWARD-AT-STAGE1-STATE1()
-;;; |--------- p PLAN-BACKWARD-AT-STAGE1-COMPLETE()
-;;; |--------- p choose-state1-left()
-;;; |--------- p choose-state1-right()
-;;; p encode-state1()
-;;; p refresh-memory() 
-;;; p refresh-memory-success()
-;;; ===== state2 =====
-;;; p encode-state2-stimulus ()  
-;;; p plan-state2 ()  
-;;; |--------- p PLAN-BACKWARD-AT-STAGE2()
-;;; |--------- p PLAN-BACKWARD-AT-STAGE2-COMPLETE()
-;;; |--------- p choose-state2-left()
-;;; |--------- p choose-state2-right() 
-;;; ===== reward =====
-;;; p encode-state2() 
-;;; p refresh-memory() 
-;;; p refresh-memory-success()
-;;; p done()
+;;;; ===== FIXATION =====
+;;; P PREPARE-WM ()
+;;; P FIND-SCREEN ()  
+;;; P PROCESS-FIXATION()
+;;; ===== STATE1 =====
+;;; P ATTEND-STATE1()
+;;; P PLAN-STATE1 ()  
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-STATE2()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-STATE1()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-COMPLETE()
+;;; |--------- P CHOOSE-STATE1-LEFT()
+;;; |--------- P CHOOSE-STATE1-RIGHT()
+;;; P ENCODE-STATE1()
+;;; P REFRESH-MEMORY() 
+;;; P REFRESH-MEMORY-SUCCESS()
+;;; ===== STATE2 =====
+;;; P ENCODE-STATE2-STIMULUS ()  
+;;; P PLAN-STATE2 ()  
+;;; |--------- P PLAN-BACKWARD-AT-STAGE2()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE2-COMPLETE()
+;;; |--------- P CHOOSE-STATE2-LEFT()
+;;; |--------- P CHOOSE-STATE2-RIGHT() 
+;;; ===== REWARD =====
+;;; P ENCODE-STATE2() 
+;;; P REFRESH-MEMORY() 
+;;; P REFRESH-MEMORY-SUCCESS()
+;;; P DONE()
 ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

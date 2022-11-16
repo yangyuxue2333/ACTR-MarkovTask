@@ -6,6 +6,7 @@ analysis/.ipynb_checkpoints/
 *.pyc
 *.iml
 *.xml
-script/old/
 script/__pycache__/
 analysis/test*
+data/
+*/old/
