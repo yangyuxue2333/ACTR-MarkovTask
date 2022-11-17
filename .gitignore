@@ -1,4 +1,3 @@
-
 script/.ipynb_checkpoints/
 analysis/.ipynb_checkpoints/
 /.ipynb_checkpoints/
@@ -10,3 +9,5 @@ script/__pycache__/
 analysis/test*
 data/
 */old/
+script/markov-model2-*
+script/markov-model3-*

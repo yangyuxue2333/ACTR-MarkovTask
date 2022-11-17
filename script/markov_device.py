@@ -361,6 +361,7 @@ class MarkovACTR(MarkovState):
               model="markov-model1",
               actr_params=None,
               task_params=None,
+              other_params=1, # scale parameter for motivation
               reload=True,
               verbose=False):
         # TODO: add function to modify parameter set
@@ -396,7 +397,7 @@ class MarkovACTR(MarkovState):
         self.set_task_parameters(task_params)
 
         # goal focus
-        mot = str(np.max(list(self.task_parameters['REWARD'].values())))
+        mot = str(other_params * np.max(list(self.task_parameters['REWARD'].values())))
         actr.define_chunks(['start-trial', 'isa', 'phase', 'step', 'attend-stimulus', 'motivation', mot, 'time-onset', '0.0', 'previous-reward', '0.0', 'current-reward', '0.0'])
         actr.goal_focus('start-trial')
 
@@ -1005,46 +1006,3 @@ class MarkovHuman(MarkovState):
         return self.__str__()
 
 
-global convergence
-convergence = 100
-def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=.6, verbose=False):
-    """
-    simulate markov model
-    thresh determines whether the model learns optimal action sequence
-    """
-    global convergence
-    if convergence < 0:
-        print('>>> Failed to converge <<<')
-        return
-    m = MarkovACTR(setup=False)
-    m.setup(model=model, verbose=verbose, task_params=task_params, actr_params=actr_params)
-    m.run_experiment(n)
-    df = m.df_postprocess_behaviors()
-
-    perf = df['optimal_response_sum_prop'].loc[len(df) - 1]
-    if perf >= thresh:
-        if verbose: print(m)
-        return m
-    else:
-        if verbose: print('>>> Not converged yet %.2f <<< [threshold = %.2f]' % (perf, thresh))
-        convergence -= 1
-        return simulate(model, n, task_params, actr_params, thresh)
-
-
-def try_simulation_example():
-    r, r1, r2 = 2, 5, 10
-    n = 50
-    thresh = 0.6
-    model1 = "markov-model1"
-    model2 = "markov-model2"
-    model3 = "markov-model3"
-
-    actr_params = {'seed': '[100, 0]', 'v': 'nil', 'ans': 0.2, 'egs': 0.2, 'lf': 0.5, 'bll': 0.5}
-    task_params = {'REWARD': {'B1': r, 'B2': r, 'C1': r, 'C2': r}}
-    task_params1 = {'REWARD': {'B1': r1, 'B2': r1, 'C1': r1, 'C2': r1}}
-    task_params2 = {'REWARD': {'B1': r2, 'B2': r2, 'C1': r2, 'C2': r2}}
-
-    m1 = simulate(model1, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
-    m2 = simulate(model2, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
-    m3 = simulate(model3, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh)
-    return df1, df2, df3
