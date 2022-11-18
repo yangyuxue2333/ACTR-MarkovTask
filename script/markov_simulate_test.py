@@ -6,7 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 import pandas.api.types as pdtypes
 from markov_device import *
-
+from datetime import date
 
 global convergence
 convergence = 100
@@ -88,49 +88,88 @@ def simulate_response_monkey(model="markov-monkey", epoch=1, n=20):
     return df_beh, df_state1stay
 
 
-def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None):
-    rewards = 0.0
+def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, other_params=1, log=False):
+    rewards = 0.0 
     beh_list, state1stay_list, utrace_list, atrace_list = [], [], [], []
-
+    
     for i in tqdm(range(epoch)):
-        m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=0)
-        if (i == 0): print(m)
-
+        m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, other_params=other_params, thresh=0)
+        # m = MarkovACTR(setup=False) 
+        # m.setup(model, verbose=False, 
+        #         task_params=task_params,
+        #         actr_params=actr_params)
+        if (i==0): print(m)
+        # m.run_experiment(n)
+        
+        
         # stay probability
         state1stay = m.calculate_stay_probability()
         utrace, atrace = m.df_postprocess_actr_traces()
         beh = m.df_postprocess_behaviors(state1_response='f', state2_response='k')
-
         state1stay['epoch'] = i
         utrace['epoch'] = i
         atrace['epoch'] = i
         beh['epoch'] = i
+        
+        if log: 
+            file_path = log_simulation(beh, dir_path=log, file_name=model+'-beh', header=(not i))
+            log_simulation(state1stay, dir_path=log, file_name=model+'-state1stay', header=(not i))
+            log_simulation(utrace, dir_path=log, file_name=model+'-utrace', header=(not i))
+            log_simulation(atrace, dir_path=log, file_name=model+'-atrace', header=(not i))
+            
+        else:
+            beh_list.append(beh)
+            state1stay_list.append(state1stay.groupby(['epoch', 'received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
+            utrace_list.append(utrace.groupby(['epoch', 'index_bin', 'action', 'state', 'response']).agg({':utility': lambda x: x.max(skipna=True)}).reset_index())
+            atrace_list.append(atrace.groupby(['epoch', 'index_bin', 'memory', 'memory_type']).agg({':Reference-Count': lambda x: x.max(skipna=True), ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index())
 
-        beh_list.append(beh)
-        state1stay_list.append(
-            state1stay.groupby(['epoch', 'received_reward', 'reward_frequency', 'state_frequency']).agg(
-                {'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
-        utrace_list.append(utrace.groupby(['epoch', 'index_bin', 'action', 'state', 'response']).agg(
-            {':utility': lambda x: x.max(skipna=True)}).reset_index())
-        atrace_list.append(atrace.groupby(['epoch', 'index_bin', 'memory', 'memory_type']).agg(
-            {':Reference-Count': lambda x: x.max(skipna=True),
-             ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index())
+            # state1stay_list.append(state1stay)
+            # utrace_list.append(utrace)
+            # atrace_list.append(atrace)
 
-        # plot
-        rewards += beh['received_reward'].sum() / len(beh)
+            # plot 
+            rewards += beh['received_reward'].sum()/len(beh) 
+        
+    if log:
+        log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params, other_params=other_params, file_path=file_path)
+        return 
+    else: 
+        max_id = np.argmax(list(m.task_parameters['REWARD_PROBABILITY'].values()))
+        expected_reward= list(m.task_parameters['REWARD'].values())[max_id] * list(m.task_parameters['REWARD_PROBABILITY'].values())[max_id]
+        print('>>>>>>>>> SIMULATION REWARD GAINED <<<<<<<<<< \t EPOCH:', epoch)
+        print('GAINED R: %.2f (EXPECTED R: %.2f) \t [%.2f %%]\n\n\n\n' % ((rewards/epoch), expected_reward, 100*(rewards/epoch)/expected_reward))
+        df_beh = pd.concat(beh_list, axis=0)
+        df_state1stay = pd.concat(state1stay_list, axis=0)#.groupby(['received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index()
+        df_utrace = pd.concat(utrace_list, axis=0)#.groupby(['index_bin', 'action', 'state', 'response']).agg({':utility': lambda x: x.max(skipna=True)}).reset_index()
+        df_atrace = pd.concat(atrace_list, axis=0)#.groupby(['index_bin', 'memory', 'memory_type']).agg({':Reference-Count': lambda x: x.max(skipna=True), ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index()
 
-    max_id = np.argmax(list(m.task_parameters['REWARD_PROBABILITY'].values()))
-    expected_reward = list(m.task_parameters['REWARD'].values())[max_id] * \
-                      list(m.task_parameters['REWARD_PROBABILITY'].values())[max_id]
-    print('>>>>>>>>> SIMULATION REWARD GAINED <<<<<<<<<< \t EPOCH:', epoch)
-    print('GAINED R: %.2f (EXPECTED R: %.2f) \t [%.2f %%]\n\n\n\n' % (
-    (rewards / epoch), expected_reward, 100 * (rewards / epoch) / expected_reward))
-    df_beh = pd.concat(beh_list, axis=0)
-    df_state1stay = pd.concat(state1stay_list,
-                              axis=0)  # .groupby(['received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index()
-    df_utrace = pd.concat(utrace_list,
-                          axis=0)  # .groupby(['index_bin', 'action', 'state', 'response']).agg({':utility': lambda x: x.max(skipna=True)}).reset_index()
-    df_atrace = pd.concat(atrace_list,
-                          axis=0)  # .groupby(['index_bin', 'memory', 'memory_type']).agg({':Reference-Count': lambda x: x.max(skipna=True), ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index()
+        return df_beh, df_state1stay, df_utrace, df_atrace 
 
-    return df_beh, df_state1stay, df_utrace, df_atrace
+def log_simulation(df, dir_path='', file_name='', header=False, verbose=False):
+    data_dir_path = '../data/'+dir_path
+    if not os.path.exists(data_dir_path): 
+        os.makedirs(data_dir_path)
+    today = date.today().strftime('-%m-%d-%Y')
+    file_path=data_dir_path+file_name+today+'.csv'
+    mode='w'
+    if os.path.exists(file_path):
+        mode='a' 
+    df.to_csv(file_path, mode=mode, header=header)
+    if verbose: print('>> saved..', file_name)
+    return file_path
+    
+
+def log_params(dir_path, epoch, n, actr_params, task_params, other_params, file_path, verbose=False):
+    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params, 'motivation':other_params, 'file_path':file_path}
+    df = pd.DataFrame(param_dict.values(), index=param_dict.keys()).T
+    
+    data_dir_path = '../data/'+dir_path
+    log_path =  data_dir_path+'log.csv'
+    mode='w'
+    header=True
+    if os.path.exists(log_path):
+        mode='a' 
+        header=False
+    df.to_csv(log_path, mode=mode, header=header)
+    if verbose: print('>> saved..', log_path)
+    
