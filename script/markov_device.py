@@ -355,6 +355,7 @@ class MarkovACTR(MarkovState):
         # init parameters
         self.actr_parameters = {}
         self.task_parameters = {}
+        self.other_parameters = 1
 
 
     def setup(self,
@@ -395,9 +396,10 @@ class MarkovACTR(MarkovState):
         # update parameter sets
         self.set_actr_parameters(actr_params)
         self.set_task_parameters(task_params)
+        self.set_other_parameters(other_params)
 
         # goal focus
-        mot = str(other_params * np.max(list(self.task_parameters['REWARD'].values())))
+        mot = str(self.other_parameters * np.max(list(self.task_parameters['REWARD'].values())))
         actr.define_chunks(['start-trial', 'isa', 'phase', 'step', 'attend-stimulus', 'motivation', mot, 'time-onset', '0.0', 'previous-reward', '0.0', 'current-reward', '0.0'])
         actr.goal_focus('start-trial')
 
@@ -627,6 +629,13 @@ class MarkovACTR(MarkovState):
             self.task_parameters = {**PROBABILITY, 'REWARD': REWARD}
         # print('after', self.task_parameters)
 
+    def set_other_parameters(self, kwargs):
+        """
+        Set other parameter: motivation scale parameter
+        By default, scla parameter = 1
+        """
+        self.other_parameters = kwargs
+
     # =================================================== #
     # DM SETUP
     # =================================================== #
@@ -854,7 +863,7 @@ class MarkovACTR(MarkovState):
 
     def __str__(self):
         header = "######### SETUP MODEL " + self.model + " #########"
-        task_parameter_info = ">> TASK PARAMETERS: " + str(self.task_parameters) + " <<"
+        task_parameter_info = ">> TASK PARAMETERS: " + str(self.task_parameters) + " \nOTHER PARAMETERS: (M SCALER) " + str(self.other_parameters) + " <<"
         actr_parameter_info = ">> ACT-R PARAMETERS: " + str(self.actr_parameters) + " <<"
         return "%s\n \t%s\n \t%s\n" % (header, task_parameter_info, actr_parameter_info)
 
