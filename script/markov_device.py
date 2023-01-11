@@ -753,7 +753,8 @@ class MarkovACTR(MarkovState):
             s.state2_selected_stimulus,
             s.received_reward,
             s.state_frequency,
-            s.reward_frequency
+            s.reward_frequency,
+            self.other_parameters
         ] for s in self.log]
         return pd.DataFrame(rows, columns= ['state1_response',
                                             'state1_response_time',
@@ -763,7 +764,8 @@ class MarkovACTR(MarkovState):
                                             'state2_selected_stimulus',
                                             'received_reward',
                                             'state_frequency',
-                                            'reward_frequency'])
+                                            'reward_frequency',
+                                            'other_parameters'])
 
     def calculate_stay_probability(self):
         """

@@ -119,7 +119,7 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
             
         else:
             beh_list.append(beh)
-            state1stay_list.append(state1stay.groupby(['epoch', 'received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
+            state1stay_list.append(state1stay.groupby(['epoch', 'other_parameters', 'received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
             utrace_list.append(utrace.groupby(['epoch', 'index_bin', 'action', 'state', 'response']).agg({':utility': lambda x: x.max(skipna=True)}).reset_index())
             atrace_list.append(atrace.groupby(['epoch', 'index_bin', 'memory', 'memory_type']).agg({':Reference-Count': lambda x: x.max(skipna=True), ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index())
 
@@ -160,7 +160,7 @@ def log_simulation(df, dir_path='', file_name='', header=False, verbose=False):
     
 
 def log_params(dir_path, epoch, n, actr_params, task_params, other_params, file_path, verbose=False):
-    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params, 'motivation':other_params, 'file_path':file_path}
+    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params, 'other_parameters':other_params, 'file_path':file_path}
     df = pd.DataFrame(param_dict.values(), index=param_dict.keys()).T
     
     data_dir_path = '../data/'+dir_path
