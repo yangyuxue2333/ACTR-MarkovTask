@@ -66,7 +66,7 @@ def simulate_response_monkey(model="markov-monkey", epoch=1, n=20):
         m.run_experiment(n)
 
         state1stay = m.calculate_stay_probability()
-        beh = m.df_postprocess_behaviors(state1_response='f', state2_response='k')
+        beh = m.df_postprocess_behaviors()
         state1stay['epoch'] = i
         beh['epoch'] = i
 
@@ -105,7 +105,7 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
         # stay probability
         state1stay = m.calculate_stay_probability()
         utrace, atrace = m.df_postprocess_actr_traces()
-        beh = m.df_postprocess_behaviors(state1_response='f', state2_response='k')
+        beh = m.df_postprocess_behaviors()
         state1stay['epoch'] = i
         utrace['epoch'] = i
         atrace['epoch'] = i
@@ -133,15 +133,27 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
     if log:
         log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params, other_params=other_params, file_path=file_path)
         return 
-    else: 
-        max_id = np.argmax(list(m.task_parameters['REWARD_PROBABILITY'].values()))
-        expected_reward= list(m.task_parameters['REWARD'].values())[max_id] * list(m.task_parameters['REWARD_PROBABILITY'].values())[max_id]
-        print('>>>>>>>>> SIMULATION REWARD GAINED <<<<<<<<<< \t EPOCH:', epoch)
-        print('GAINED R: %.2f (EXPECTED R: %.2f) \t [%.2f %%]\n\n\n\n' % ((rewards/epoch), expected_reward, 100*(rewards/epoch)/expected_reward))
+    else:
+        # merge df list
         df_beh = pd.concat(beh_list, axis=0)
         df_state1stay = pd.concat(state1stay_list, axis=0)#.groupby(['received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index()
         df_utrace = pd.concat(utrace_list, axis=0)#.groupby(['index_bin', 'action', 'state', 'response']).agg({':utility': lambda x: x.max(skipna=True)}).reset_index()
         df_atrace = pd.concat(atrace_list, axis=0)#.groupby(['index_bin', 'memory', 'memory_type']).agg({':Reference-Count': lambda x: x.max(skipna=True), ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index()
+
+        # calculate expected reward
+        # mean reward probabilities for 4 state2 responses
+        # expected reward = max_reward_probability * reward gained (2 default)
+        max_reward_probability = df_beh[['reward_probability_B1',
+                                         'reward_probability_B2',
+                                         'reward_probability_C1',
+                                         'reward_probability_C2']].mean().max()
+        expected_reward = max_reward_probability * np.max(list(m.task_parameters['REWARD'].values()))
+        # max_id = np.argmax(list(m.task_parameters['REWARD_PROBABILITY'].values()))
+        # expected_reward = list(m.task_parameters['REWARD'].values())[max_id] * \
+        #                   list(m.task_parameters['REWARD_PROBABILITY'].values())[max_id]
+        print('>>>>>>>>> SIMULATION REWARD GAINED <<<<<<<<<< \t EPOCH:', epoch)
+        print('GAINED R: %.2f (EXPECTED R: %.2f) \t [%.2f %%]\n\n\n\n' % (
+        (rewards / epoch), expected_reward, 100 * (rewards / epoch) / expected_reward))
 
         return df_beh, df_state1stay, df_utrace, df_atrace 
 

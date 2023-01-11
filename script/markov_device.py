@@ -43,6 +43,8 @@ ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'mas', 'egs', 'alpha',
 # TASK PARAMETERS
 REWARD: Dict[str, float] = {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}
 PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28}}
+RANDOM_WALK = True  #Enable random walk for reward probability
+RANDOM_TABLE, RANDOM_NOISE_TABLE = None, None
 
 random.seed(0)
 
@@ -210,7 +212,8 @@ class MarkovState():
         self.state1_selected_stimulus = RESPONSE_MAP[0][response]
 
         if RESPONSE_MAP[0][response] == 'A1':
-            if random.random() < self.markov_probability:
+            # use pseudo_random_numbers() rather than random.random() to fix the randomness
+            if MarkovACTR.pseudo_random() < self.markov_probability:
                 self.state2_stimuli = MarkovStimulus('B1'), MarkovStimulus('B2')
                 # log reward frequency
                 #self.state_frequency = 'common'
@@ -222,7 +225,7 @@ class MarkovState():
             self.state2_selected_stimulus = RESPONSE_MAP[1][response]
 
         if RESPONSE_MAP[0][response] == 'A2':
-            if random.random() < self.markov_probability:
+            if MarkovACTR.pseudo_random() < self.markov_probability:
                 self.state2_stimuli = MarkovStimulus('C1'), MarkovStimulus('C2')
                 #self.state_frequency = 'common'
                 self.state_frequency = self.get_letter_frequency(self.markov_probability)
@@ -244,23 +247,28 @@ class MarkovState():
             self.state2_selected_stimulus = RESPONSE_MAP[2][response]
         self.state = 2
 
-    def reward(self, random_walk=True):
+    def reward(self):
         """
         self.reward_probability = 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28}
         self.reward_probability_random_walk = {'B1':0, 'B2':0, 'C1':0, 'C2':0} (init values)
             random walk values should be updated after each trial
         self.reward_dict = {'B1':2, 'B2':2, 'C1':2,'C2':2}
 
+        self.curr_reward_probability <- updated reward_pobability value
+        self.curr_reward_probability_dict <- updated reward_probability_dict
+
         """
         # enable random walk
-        if (random_walk is True):
-            self.curr_reward_probability = self.reward_probability_random_walk[self.state2_selected_stimulus]
+        if (RANDOM_WALK is True):
+            self.curr_reward_probability = self.reward_probability_random_walk[self.state2_selected_stimulus] # num value
+            self.curr_reward_probability_dict = self.reward_probability_random_walk # dict
         else:
             # log reward probability
             self.curr_reward_probability = self.reward_probability_fixed[self.state2_selected_stimulus]
+            self.curr_reward_probability_dict = self.reward_probability_fixed
 
         # decide received reward
-        if random.random() < self.curr_reward_probability: #self.curr_reward_probability[self.state2_selected_stimulus]:
+        if MarkovACTR.pseudo_random() < self.curr_reward_probability: #self.curr_reward_probability[self.state2_selected_stimulus]:
             self.received_reward = self.reward_dict[self.state2_selected_stimulus]
             # log reward frequency
             self.reward_frequency = self.get_letter_frequency(self.curr_reward_probability)
@@ -271,11 +279,6 @@ class MarkovState():
 
         # update state
         self.state = 3
-        # print('test reward, self.state2_selected_stimulus', self.state2_selected_stimulus)
-        # print('test reward, self.curr_reward_probability', self.curr_reward_probability)
-        # print('test reward, self.received_reward', self.received_reward)
-        # print('test reward, self.reward_frequency', self.reward_frequency)
-        # print('test6')
 
     # =================================================== #
     # ACTR CHUNK TRACE INFO
@@ -380,6 +383,9 @@ class MarkovACTR(MarkovState):
         self.task_parameters = {}
         self.other_parameters = 1
 
+        # init pseudo_random_table
+        self.init_pseudo_random_tables()
+
 
     def setup(self,
               model="markov-model1",
@@ -396,7 +402,6 @@ class MarkovACTR(MarkovState):
         # init working dir
         script_dir = os.path.join(os.path.dirname(os.path.realpath('../__file__')), 'script')
         # print('test curr_dir', script_dir)
-
 
 
         self.add_actr_commands()
@@ -447,7 +452,6 @@ class MarkovACTR(MarkovState):
         actr.add_command("markov-update-end", self.update_end, "Update window: done")
 
         actr.add_command("markov-update-reward-probability", self.update_random_walk_reward_probabilities, "Update reward probability: before state0")
-
 
     def remove_actr_commands(self):
         actr.remove_command("markov-update-state0")
@@ -511,7 +515,6 @@ class MarkovACTR(MarkovState):
             if self.verbose:
                 print(self.markov_state)
 
-
     def update_state0(self):
         # self.markov_state = MarkovState()
         actr.clear_exp_window()
@@ -563,13 +566,16 @@ class MarkovACTR(MarkovState):
 
     def update_random_walk_reward_probabilities(self):
         """
-        enable random walk reward probabilities at the start of each trial
+        This function enables random walk reward probabilities at the start of each trial
 
         access previous state from log, and current state
         calculate random walk probability for current state
         update random walk probability for
         """
+        # init markov state
         self.markov_state = MarkovState()
+
+        # calculate random walk noise
         if len(self.log) > 0:
             pre_state = self.log[-1]
             curr_state = self.markov_state
@@ -577,9 +583,12 @@ class MarkovACTR(MarkovState):
             curr_state_p_dict = curr_state.reward_probability_random_walk
 
             for key, prob in pre_state_p_dict.items():
-                prob_rw = prob + np.random.normal(loc=0, scale=0.025)
+                # use pseudo_random_noise() rather than random.normal
+                #prob_rw = prob + np.random.normal(loc=0, scale=0.025)
+                prob_rw = prob + MarkovACTR.pseudo_random_noise()
                 while (prob_rw < 0.25) | (prob_rw > 0.75):
-                    prob_rw = prob + np.random.normal(loc=0, scale=0.025)
+                    #prob_rw = prob + np.random.normal(loc=0, scale=0.025)
+                    prob_rw = prob + MarkovACTR.pseudo_random_noise()
                 # update current state's reward probability based on random walk algorithm
                 curr_state_p_dict[key] = prob_rw
             # update to state properties
@@ -587,6 +596,7 @@ class MarkovACTR(MarkovState):
         else:
             self.markov_state.reward_probability_random_walk = self.markov_state.reward_probability_fixed.copy()
         # print('test after reward_probability_random_walk', self.markov_state.reward_probability_random_walk)
+
 
     def run_experiment(self, n=2):
         """
@@ -658,7 +668,8 @@ class MarkovACTR(MarkovState):
         Set the task parameter
              self.task_parameter = {'MARKOV_PROBABILITY': 0.7,
                                     'REWARD_PROBABILITY': 0.7,
-                                    'REWARD': {'B1': 2, 'B2': 0, 'C1': 0, 'C2': 0}
+                                    'REWARD': {'B1': 2, 'B2': 0, 'C1': 0, 'C2': 0
+                                    'RANDOM_WALK': True}
         If kwargs == None: return default parameters
         """
         # print('before', self.task_parameters)
@@ -666,11 +677,14 @@ class MarkovACTR(MarkovState):
         # if new para given
         global REWARD
         global PROBABILITY
+        global RANDOM_WALK
 
         self.task_parameters = self.get_default_task_parameters()
         REWARD = self.task_parameters['REWARD']
         PROBABILITY = {'MARKOV_PROBABILITY':self.task_parameters['MARKOV_PROBABILITY'],
                        'REWARD_PROBABILITY':self.task_parameters['REWARD_PROBABILITY']}
+        RANDOM_WALK = self.task_parameters['RANDOM_WALK']
+
         if kwargs:
             # print('before update', REWARD, PROBABILITY)
             for key, value in kwargs.items():
@@ -681,8 +695,10 @@ class MarkovACTR(MarkovState):
                     PROBABILITY['MARKOV_PROBABILITY'] = value
                 if key == 'REWARD_PROBABILITY':
                     PROBABILITY['REWARD_PROBABILITY'] = value
+                if key == 'RANDOM_WALK':
+                    RANDOM_WALK = value
             # print('after update', REWARD, PROBABILITY)
-            self.task_parameters = {**PROBABILITY, 'REWARD': REWARD}
+            self.task_parameters = {**PROBABILITY, 'REWARD': REWARD, 'RANDOM_WALK':RANDOM_WALK}
         # print('after', self.task_parameters)
 
     def set_other_parameters(self, kwargs):
@@ -693,54 +709,46 @@ class MarkovACTR(MarkovState):
         self.other_parameters = kwargs
 
     # =================================================== #
+    # PSEUDO RANDOMNESS
+    # =================================================== #
+    def init_pseudo_random_tables(self):
+        """
+        Create a random numer table
+        """
+        np.random.seed(0)
+        n = 1000
+        # use infinite iterator
+        # when it reaches to end, will return from back
+        global RANDOM_TABLE
+        global RANDOM_NOISE_TABLE
+        RANDOM_TABLE = itertools.cycle(np.random.random_sample(n).tolist())
+        RANDOM_NOISE_TABLE = itertools.cycle(np.random.normal(loc=0, scale=0.025, size=n).tolist())
+
+    @staticmethod
+    def pseudo_random():
+        """
+        To alleviate the impact of randomness, we use pseudo random generator
+        Each random number generated during the model simulation is accessed
+        from a pre-generated random number table.
+        """
+        # print('access random number')
+        # return random.random()
+        return next(RANDOM_TABLE)
+
+    @staticmethod
+    def pseudo_random_noise():
+        """
+        To alleviate the impact of randomness, we use pseudo random generator
+        Each random number generated during the model simulation is accessed
+        from a pre-generated random number table.
+        """
+        # print('access random noise')
+        # return np.random.normal(loc=0, scale=0.025)
+        return next(RANDOM_NOISE_TABLE)
+
+    # =================================================== #
     # DM SETUP
     # =================================================== #
-    def actr_dm0(self):
-        """
-        Add declarative memory
-        (M1-1 isa wm
-          status process
-          state1-left-stimulus A1
-          state1-right-stimulus A2
-          state2-left-stimulus B1
-          state2-right-stimulus B2
-          state1-selected-stimulus LEFT
-          state2-selected-stimulus LEFT
-          reward 2)
-        """
-
-        global REWARD
-        reward = [max(REWARD.values()), 0]
-        i,j = 0,1
-        dm = []
-        for c in list(itertools.product(reward, [['B1', 'B2'], ['C1', 'C2']], ['LEFT', 'RIGHT'], ['LEFT', 'RIGHT'])):
-            r, s2, a1, a2 = c[0], c[1], c[2], c[3]
-            i += 1
-            if i > 8: i = 1  # 8 memory
-            if r == 0: j = 0 # 1=reward; 0=non-reward
-            name = 'M' + str(j) + '-' + str(i)
-            # print(name, s2, a1, a2, r)
-            dm.append([name, 'isa', 'wm',
-                                  'status', 'process',
-                                  'state1-left-stimulus', 'A1',
-                                  'state1-right-stimulus', 'A2',
-                                  'state2-left-stimulus', s2[0],
-                                  'state2-right-stimulus', s2[1],
-                                  'state1-selected-stimulus', a1,
-                                  'state2-selected-stimulus', a2,
-                                  'reward', r])
-            # s = "%s isa wm\n \
-            #                 status process\n \
-            #                 state1-left-stimulus A1\n \
-            #                 state1-right-stimulus A2\n \
-            #                 state2-left-stimulus %s\n \
-            #                 state2-right-stimulus %s\n \
-            #                 state1-selected-stimulus %s\n \
-            #                 state2-selected-stimulus %s\n \
-            #                 reward %s" % (name, s2[0], s2[1], a1, a2, r)
-            # # print(s)
-        return dm
-
     def actr_dm(self):
         """
         Add declarative memory
@@ -789,7 +797,8 @@ class MarkovACTR(MarkovState):
         """
         return {'MARKOV_PROBABILITY': 0.7,
                 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28},
-                'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}}
+                'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2},
+                'RANDOM_WALK': True}
 
 
     # =================================================== #
@@ -862,57 +871,90 @@ class MarkovACTR(MarkovState):
             res = df.merge(df1, how='left').merge(df2, how='left').merge(df3, how='left').round(2)
         return res
 
-    def df_reward_probabilities(self):
+    def df_reward_probabilities(self, format='long'):
         """
         Return reward probabilities if random walk is enabled
         """
+        assert format in ('wide', 'long')
+        # log curr reward probability
+        # if random walk is enabled, curr_reward_probability_dict is reward_probability_random_walk
+        # otherwise, curr_reward_probability_dict is reward_probability_fixed
         df_wide = pd.DataFrame([{'state2_selected_stimulus': s.state2_selected_stimulus,
                                  'received_reward': s.received_reward,
-                                 **s.reward_probability_random_walk} for s in self.log])
-        df_wide = df_wide.reset_index()
-        res = df_wide.melt(id_vars=['index', 'state2_selected_stimulus', 'received_reward'],
+                                 **s.curr_reward_probability_dict} for s in self.log]).reset_index()
+
+        df_long = df_wide.melt(id_vars=['index', 'state2_selected_stimulus', 'received_reward'],
                            var_name='state2_stimulus', value_name='reward_probability').sort_values(by='index')
+        if format == 'long':
+            res = df_long
+        else:
+            res = df_wide
+
         return res
 
-    def df_optimal_behaviors(self):
+    def df_optimal_behaviors(self, num_bin=4):
         """
-        Estimate the optimal behaviors based on binned reward probabilities
+        Estimate the optimal response
+        First, look at selected responses from state2, and curr_reward_probability_dict.
+        If random walk is enabled, curr_reward_probability_dict = reward_probability_random_walk
+        Otherwise, curr_reward_probability_dict = reward_probability_fixed
+        Second, bin trials into 4 blocks (default), and calculate the mean reward probability in each block
+        Third, find out the state2 response with hightest reward probability, this is the optimal response
+        Lastly, join the optimal response back to wide df
         """
         df_wide = pd.DataFrame([{'state1_selected_stimulus': s.state1_selected_stimulus,
                                  'state2_selected_stimulus': s.state2_selected_stimulus,
                                  'received_reward': s.received_reward,
-                                 **s.reward_probability_random_walk} for s in self.log]).reset_index()
-        df_wide['index_bin'] = pd.cut(df_wide['index'], 4, labels=False, ordered=False, right=False)
+                                 **s.curr_reward_probability_dict} for s in self.log]).reset_index()
+        df_wide['index_bin'] = pd.cut(df_wide['index'], num_bin, labels=False, ordered=False, right=False)
         df_max = df_wide.groupby(['index_bin'])[['B1', 'B2', 'C1', 'C2']].mean().reset_index()
-        df_max['optimal_state2'] = df_max[['B1', 'B2', 'C1', 'C2']].idxmax(axis=1)
-        df_max['optimal_state1'] = df_max['optimal_state2'].replace({'B1': 'A1', 'B2': 'A1', 'C1': 'A2', 'C2': 'A2'})
-        res = pd.merge(df_wide[['index', 'index_bin']], df_max[['index_bin', 'optimal_state1', 'optimal_state2']], how='left')
+
+        # estimate the optimal state2 response by highest reward probabilities
+        df_max['state2_optimal'] = df_max[['B1', 'B2', 'C1', 'C2']].idxmax(axis=1)
+
+        # estimate the optimal state1 response by common path from state1 to state2
+        df_max['state1_optimal'] = df_max['state2_optimal'].replace({'B1': 'A1', 'B2': 'A1', 'C1': 'A2', 'C2': 'A2'})
+
+        res = pd.merge(df_wide[['index', 'index_bin']], df_max[['index_bin', 'state1_optimal', 'state2_optimal']],
+                       how='left')
         return res
 
-    def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
+    def df_postprocess_behaviors(self):
         """
-        Return merged beh data
+        Return post processed beh data: each row is one trial
+
+        1. reward probabilities for four state2 stimulus
+        2. model simulated beh data
+        3. estimated optimal response. This is done by binned trials.
+            For example, 100 trials are binned to 4 blocks. In each block, the optimal state2 response
+            is determined by the averaged highest reward probability. Correspondinglt, the optimal state1
+            response is estimated by common path from state1 to state2. If optimal state is B2, then optimal
+            state1 should be A1. If optimal state is C2, then optimal tate1 should be A2.
         """
 
         # merge reward probabilities
-        dfr = self.df_reward_probabilities()
-        dfr_max = dfr.loc[dfr.groupby(['index'])['reward_probability'].idxmax(axis=0)]
+        # wide format of reward probabilities
+        dfr = self.df_reward_probabilities(format='wide').rename({'B1':'reward_probability_B1',
+                                                               'B2':'reward_probability_B2',
+                                                               'C1':'reward_probability_C1',
+                                                               'C2':'reward_probability_C2'}, axis=1)
+        # dfr_max = dfr.loc[dfr.groupby(['index'])['reward_probability'].idxmax(axis=0)]
         # merge beh data, optimal beh estimation and reward probabilities
-        df = pd.merge(pd.merge(self.df_behaviors().reset_index(), self.df_optimal_behaviors()), dfr_max, how='left')
+        df = pd.merge(pd.merge(self.df_behaviors().reset_index(), self.df_optimal_behaviors()), dfr, how='left')
 
         df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
         df['received_reward_sum'] = df['received_reward_norm'].cumsum()
-        df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == x['optimal_state1'] and x['state2_response'] == x['optimal_state2']) else 0, axis=1)
+        df['is_optimal'] = df.apply(lambda x: 1 if (x['state1_selected_stimulus'] == x['state1_optimal'] and x['state2_selected_stimulus'] == x['state2_optimal']) else 0, axis=1)
 
         # instead of using fixed optimal response(fixed reward), we estimate optimal by binned trials into 4 blocks
         # response2 associated with the highest reward probabilities (binned) are optimal response
         # response1 is estimated from common frequency (common response 1 - response 2 is optimal)
-        #df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
+        #df['is_optimal'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
         df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
 
         # calculate the cumulative optimal to estimaye learning outcome
-        df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
-        df['optimal_response_sum'] = df['optimal_response'].cumsum()
+        df = pd.merge(df, df.groupby(['index_bin'])['is_optimal'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
+        df['optimal_response_sum'] = df['is_optimal'].cumsum()
         df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
         return df
 
@@ -933,18 +975,6 @@ class MarkovACTR(MarkovState):
         if norm:
             df[':utility'] = (df[':utility'] - df[':utility'].min()) / (df[':utility'].max() - df[':utility'].min())
         return df
-
-    # def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
-    #     df = self.df_behaviors().reset_index()
-    #     df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
-    #     df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
-    #     df['received_reward_sum'] = df['received_reward_norm'].cumsum()
-    #     df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
-    #     df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
-    #     df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
-    #     df['optimal_response_sum'] = df['optimal_response'].cumsum()
-    #     df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
-    #     return df
 
     def df_postprocess_actr_traces(self):
         # production trace
@@ -971,9 +1001,6 @@ class MarkovACTR(MarkovState):
             df1 = df1.astype({'index_bin': float, ':utility': float})
             df2 = df2.astype({'index_bin': float, ':Reference-Count': float, ':Last-Retrieval-Activation': float})
             return df1, df2
-
-
-
 
     def __str__(self):
         header = "######### SETUP MODEL " + self.model + " #########"
@@ -1109,16 +1136,30 @@ class MarkovHuman(MarkovState):
                            var_name='state2_stimulus', value_name='reward_probability').sort_values(by='index')
         return res
 
-    def df_optimal_behaviors(self):
+    def df_optimal_behaviors(self, num_bin=4):
+        """
+        Estimate the optimal response
+        First, look at selected responses from state2, and curr_reward_probability_dict.
+        If random walk is enabled, curr_reward_probability_dict = reward_probability_random_walk
+        Otherwise, curr_reward_probability_dict = reward_probability_fixed
+        Second, bin trials into 4 blocks (default), and calculate the mean reward probability in each block
+        Third, find out the state2 response with hightest reward probability, this is the optimal response
+        Lastly, join the optimal response back to wide df
+        """
         df_wide = pd.DataFrame([{'state1_selected_stimulus': s.state1_selected_stimulus,
                                  'state2_selected_stimulus': s.state2_selected_stimulus,
                                  'received_reward': s.received_reward,
-                                 **s.reward_probability_random_walk} for s in self.log]).reset_index()
-        df_wide['index_bin'] = pd.cut(df_wide['index'], 4, labels=False, ordered=False, right=False)
+                                 **s.curr_reward_probability_dict} for s in self.log]).reset_index()
+        df_wide['index_bin'] = pd.cut(df_wide['index'], num_bin, labels=False, ordered=False, right=False)
         df_max = df_wide.groupby(['index_bin'])[['B1', 'B2', 'C1', 'C2']].mean().reset_index()
-        df_max['optimal_state2'] = df_max[['B1', 'B2', 'C1', 'C2']].idxmax(axis=1)
-        df_max['optimal_state1'] = df_max['optimal_state2'].replace({'B1': 'A1', 'B2': 'A1', 'C1': 'A2', 'C2': 'A2'})
-        res = pd.merge(df_wide[['index', 'index_bin']], df_max[['index_bin', 'optimal_state1', 'optimal_state2']], how='left')
+
+        # estimate the optimal state2 response by highest reward probabilities
+        df_max['state2_optimal'] = df_max[['B1', 'B2', 'C1', 'C2']].idxmax(axis=1)
+
+        # estimate the optimal state1 response by common path from state1 to state2
+        df_max['state1_optimal'] = df_max['state2_optimal'].replace({'B1': 'A1', 'B2': 'A1', 'C1': 'A2', 'C2': 'A2'})
+
+        res = pd.merge(df_wide[['index', 'index_bin']], df_max[['index_bin', 'state1_optimal', 'state2_optimal']], how='left')
         return res
 
     def calculate_stay_probability(self):
@@ -1138,11 +1179,11 @@ class MarkovHuman(MarkovState):
         # df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
         df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
         df['received_reward_sum'] = df['received_reward_norm'].cumsum()
-        df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == x['optimal_state1'] and x['state2_response'] == x['optimal_state2']) else 0, axis=1)
-        #df['optimal_response'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
+        df['is_optimal'] = df.apply(lambda x: 1 if (x['state1_response'] == x['state1_optimal'] and x['state2_response'] == x['state2_optimal']) else 0, axis=1)
+        #df['is_optimal'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
         df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
-        df = pd.merge(df, df.groupby(['index_bin'])['optimal_response'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
-        df['optimal_response_sum'] = df['optimal_response'].cumsum()
+        df = pd.merge(df, df.groupby(['index_bin'])['is_optimal'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
+        df['optimal_response_sum'] = df['is_optimal'].cumsum()
         df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
         return df
 
