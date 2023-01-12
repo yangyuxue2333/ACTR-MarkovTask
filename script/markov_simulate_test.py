@@ -12,7 +12,7 @@ global convergence
 convergence = 100
 
 
-def simulate(model="markov-model1", n=20, task_params=None, actr_params=None,  other_params=1, thresh=.6, verbose=False):
+def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=.6, verbose=False):
     """
     simulate markov model
     thresh determines whether the model learns optimal action sequence
@@ -22,7 +22,7 @@ def simulate(model="markov-model1", n=20, task_params=None, actr_params=None,  o
         print('>>> Failed to converge <<<')
         return
     m = MarkovACTR(setup=False)
-    m.setup(model=model, verbose=verbose, task_params=task_params, actr_params=actr_params, other_params=other_params)
+    m.setup(model=model, verbose=verbose, task_params=task_params, actr_params=actr_params)
     m.run_experiment(n)
     df = m.df_postprocess_behaviors()
 
@@ -88,12 +88,12 @@ def simulate_response_monkey(model="markov-monkey", epoch=1, n=20):
     return df_beh, df_state1stay
 
 
-def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, other_params=1, log=False):
+def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, log=False):
     rewards = 0.0 
     beh_list, state1stay_list, utrace_list, atrace_list = [], [], [], []
     
     for i in tqdm(range(epoch)):
-        m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, other_params=other_params, thresh=0)
+        m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=0)
         # m = MarkovACTR(setup=False) 
         # m.setup(model, verbose=False, 
         #         task_params=task_params,
@@ -112,14 +112,14 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
         beh['epoch'] = i
         
         if log: 
-            file_path = log_simulation(beh, dir_path=log, file_name=model+'-beh', header=(not i))
-            log_simulation(state1stay, dir_path=log, file_name=model+'-state1stay', header=(not i))
-            log_simulation(utrace, dir_path=log, file_name=model+'-utrace', header=(not i))
-            log_simulation(atrace, dir_path=log, file_name=model+'-atrace', header=(not i))
+            file_path = log_simulation(beh, dir_path=log, file_name=model+'-sim-logdata', header=(not i))
+            log_simulation(state1stay, dir_path=log, file_name=model+'-sim-staydata', header=(not i))
+            log_simulation(utrace, dir_path=log, file_name=model+'-actr-udata', header=(not i))
+            log_simulation(atrace, dir_path=log, file_name=model+'-actr-adata', header=(not i))
             
         else:
             beh_list.append(beh)
-            state1stay_list.append(state1stay.groupby(['epoch', 'other_parameters', 'received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
+            state1stay_list.append(state1stay.groupby(['epoch', 'm_parameter', 'received_reward', 'reward_frequency', 'state_frequency']).agg({'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
             utrace_list.append(utrace.groupby(['epoch', 'index_bin', 'action', 'state', 'response']).agg({':utility': lambda x: x.max(skipna=True)}).reset_index())
             atrace_list.append(atrace.groupby(['epoch', 'index_bin', 'memory', 'memory_type']).agg({':Reference-Count': lambda x: x.max(skipna=True), ':Last-Retrieval-Activation': lambda x: x.max(skipna=True)}).reset_index())
 
@@ -131,7 +131,7 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
             rewards += beh['received_reward'].sum()/len(beh) 
         
     if log:
-        log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params, other_params=other_params, file_path=file_path)
+        log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params, file_path=file_path)
         return 
     else:
         # merge df list
@@ -161,7 +161,7 @@ def log_simulation(df, dir_path='', file_name='', header=False, verbose=False):
     data_dir_path = '../data/'+dir_path
     if not os.path.exists(data_dir_path): 
         os.makedirs(data_dir_path)
-    today = date.today().strftime('-%m-%d-%Y')
+    today = date.today().strftime('-%m%d%y') #.strftime('-%m-%d-%Y')
     file_path=data_dir_path+file_name+today+'.csv'
     mode='w'
     if os.path.exists(file_path):
@@ -171,8 +171,8 @@ def log_simulation(df, dir_path='', file_name='', header=False, verbose=False):
     return file_path
     
 
-def log_params(dir_path, epoch, n, actr_params, task_params, other_params, file_path, verbose=False):
-    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params, 'other_parameters':other_params, 'file_path':file_path}
+def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=False):
+    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params, 'file_path':file_path}
     df = pd.DataFrame(param_dict.values(), index=param_dict.keys()).T
     
     data_dir_path = '../data/'+dir_path

@@ -41,6 +41,7 @@ RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
 ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'mas', 'egs', 'alpha', 'imaginal-activation']
 
 # TASK PARAMETERS
+M = 1
 REWARD: Dict[str, float] = {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}
 PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28}}
 RANDOM_WALK = True  #Enable random walk for reward probability
@@ -381,7 +382,6 @@ class MarkovACTR(MarkovState):
         # init parameters
         self.actr_parameters = {}
         self.task_parameters = {}
-        self.other_parameters = 1
 
         # init pseudo_random_table
         self.init_pseudo_random_tables()
@@ -391,7 +391,6 @@ class MarkovACTR(MarkovState):
               model="markov-model1",
               actr_params=None,
               task_params=None,
-              other_params=1, # scale parameter for motivation
               reload=True,
               verbose=False):
         # TODO: add function to modify parameter set
@@ -424,10 +423,9 @@ class MarkovACTR(MarkovState):
         # update parameter sets
         self.set_actr_parameters(actr_params)
         self.set_task_parameters(task_params)
-        self.set_other_parameters(other_params)
 
         # goal focus
-        mot = str(self.other_parameters * np.max(list(self.task_parameters['REWARD'].values())))
+        mot = str(self.task_parameters['M'] * np.max(list(self.task_parameters['REWARD'].values())))
         actr.define_chunks(['start-trial', 'isa', 'phase', 'step', 'attend-stimulus', 'motivation', mot, 'time-onset', '0.0', 'previous-reward', '0.0', 'current-reward', '0.0'])
         actr.goal_focus('start-trial')
 
@@ -675,20 +673,29 @@ class MarkovACTR(MarkovState):
         # print('before', self.task_parameters)
         # new = self.task_parameters.copy()
         # if new para given
+
+        global M
         global REWARD
         global PROBABILITY
         global RANDOM_WALK
 
+        # init default parameters
         self.task_parameters = self.get_default_task_parameters()
+
+        # pass default params to global variables
+        M = self.task_parameters['M']
         REWARD = self.task_parameters['REWARD']
         PROBABILITY = {'MARKOV_PROBABILITY':self.task_parameters['MARKOV_PROBABILITY'],
                        'REWARD_PROBABILITY':self.task_parameters['REWARD_PROBABILITY']}
         RANDOM_WALK = self.task_parameters['RANDOM_WALK']
 
+        # update new params to global variables
         if kwargs:
             # print('before update', REWARD, PROBABILITY)
             for key, value in kwargs.items():
                 # print(key, value)
+                if key == 'M':
+                    M = value
                 if key == 'REWARD':
                     REWARD = value
                 if key == 'MARKOV_PROBABILITY':
@@ -698,15 +705,8 @@ class MarkovACTR(MarkovState):
                 if key == 'RANDOM_WALK':
                     RANDOM_WALK = value
             # print('after update', REWARD, PROBABILITY)
-            self.task_parameters = {**PROBABILITY, 'REWARD': REWARD, 'RANDOM_WALK':RANDOM_WALK}
+            self.task_parameters = {**PROBABILITY, 'REWARD': REWARD, 'RANDOM_WALK':RANDOM_WALK, 'M':M}
         # print('after', self.task_parameters)
-
-    def set_other_parameters(self, kwargs):
-        """
-        Set other parameter: motivation scale parameter
-        By default, scla parameter = 1
-        """
-        self.other_parameters = kwargs
 
     # =================================================== #
     # PSEUDO RANDOMNESS
@@ -795,7 +795,8 @@ class MarkovACTR(MarkovState):
         """
         default parameter sets
         """
-        return {'MARKOV_PROBABILITY': 0.7,
+        return {'M': 1,
+                'MARKOV_PROBABILITY': 0.7,
                 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28},
                 'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2},
                 'RANDOM_WALK': True}
@@ -819,7 +820,7 @@ class MarkovACTR(MarkovState):
             s.received_reward,
             s.state_frequency,
             s.reward_frequency,
-            self.other_parameters
+            self.task_parameters['M']
         ] for s in self.log]
         return pd.DataFrame(rows, columns= ['state1_response',
                                             'state1_response_time',
@@ -830,7 +831,7 @@ class MarkovACTR(MarkovState):
                                             'received_reward',
                                             'state_frequency',
                                             'reward_frequency',
-                                            'other_parameters'])
+                                            'm_parameter'])
 
     def calculate_stay_probability(self):
         """
@@ -1004,7 +1005,7 @@ class MarkovACTR(MarkovState):
 
     def __str__(self):
         header = "######### SETUP MODEL " + self.model + " #########"
-        task_parameter_info = ">> TASK PARAMETERS: " + str(self.task_parameters) + " \nOTHER PARAMETERS: (M SCALER) " + str(self.other_parameters) + " <<"
+        task_parameter_info = ">> TASK PARAMETERS: " + str(self.task_parameters) + " <<"
         actr_parameter_info = ">> ACT-R PARAMETERS: " + str(self.actr_parameters) + " <<"
         return "%s\n \t%s\n \t%s\n" % (header, task_parameter_info, actr_parameter_info)
 
