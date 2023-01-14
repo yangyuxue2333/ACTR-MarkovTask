@@ -278,6 +278,8 @@ class MarkovState():
             # log reward frequency
             self.reward_frequency = self.get_letter_frequency(1-self.curr_reward_probability)
 
+        # print('TEST L281: self.curr_reward_probability; self.reward_frequency', self.curr_reward_probability, self.reward_frequency, )
+
         # update state
         self.state = 3
 
@@ -375,6 +377,11 @@ class MarkovACTR(MarkovState):
 
         if setup:
             self.setup()
+
+        # log ACTR trace
+        # if log_full_trace is enabled, every trial's actr trace will be stored
+        # if disabled, only last trial's actr trace will be stored
+        self.log_full_trace = False
 
         # init markov state
         self.markov_state = None
@@ -503,10 +510,13 @@ class MarkovACTR(MarkovState):
         if self.markov_state.state == 3:
 
             # log actr trace
-            self.markov_state.actr_chunk_trace = {':Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Activation'),
-                                                  ':Last-Retrieval-Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Last-Retrieval-Activation'),
-                                                  ':Reference-Count':self.markov_state.get_actr_chunk_trace(parameter_name=':Reference-Count')}
-            self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(parameter_name=':utility')
+            # if self.log_full_trace is enabled, every trials' trace will be stored
+            # if not, only last trial or all trials
+            if self.log_full_trace:
+                self.markov_state.actr_chunk_trace = {':Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Activation'),
+                                                      ':Last-Retrieval-Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Last-Retrieval-Activation'),
+                                                      ':Reference-Count':self.markov_state.get_actr_chunk_trace(parameter_name=':Reference-Count')}
+                self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(parameter_name=':utility')
 
             self.log.append(self.markov_state)
 
@@ -977,30 +987,61 @@ class MarkovACTR(MarkovState):
             df[':utility'] = (df[':utility'] - df[':utility'].min()) / (df[':utility'].max() - df[':utility'].min())
         return df
 
-    def df_postprocess_actr_traces(self):
-        # production trace
-        df1 = self.df_actr_production_traces(parameter_name=':utility')
-        df1['index_bin'] = pd.cut(df1['index'], 10, labels=False, ordered=False, right=False)
-        df1['state'] = df1.apply(lambda x: 'STATE1' if ('CHOOSE-STATE1' in x['action']) else 'STATE2', axis=1)
-        df1['response'] = df1.apply(lambda x: 'LEFT' if ('LEFT' in x['action']) else 'RIGHT', axis=1)
-        df1 = df1.fillna(0.0)
 
-        # memory trace
-        try:
-            df21 = self.df_actr_chunk_traces(parameter_name=':Reference-Count')
-            df22 = self.df_actr_chunk_traces(parameter_name=':Last-Retrieval-Activation').fillna(0.0)
-            df2 = pd.merge(df21, df22)
-            df2['index_bin'] = pd.cut(df2['index'], 10, labels=False)
+    def df_postprocess_actr_traces(self):
+        """
+        Return the actr traces
+            if log_full_trace == True, return full trace df
+            else: return last trial's trace
+        """
+
+        if self.log_full_trace:
+            # production trace
+            df1 = self.df_actr_production_traces(parameter_name=':utility')
+            df1['index_bin'] = pd.cut(df1['index'], 10, labels=False, ordered=False, right=False)
+            df1['state'] = df1.apply(lambda x: 'STATE1' if ('CHOOSE-STATE1' in x['action']) else 'STATE2', axis=1)
+            df1['response'] = df1.apply(lambda x: 'LEFT' if ('LEFT' in x['action']) else 'RIGHT', axis=1)
+            df1 = df1.fillna(0.0)
+
+            # memory trace
+            try:
+                df21 = self.df_actr_chunk_traces(parameter_name=':Reference-Count')
+                df22 = self.df_actr_chunk_traces(parameter_name=':Last-Retrieval-Activation').fillna(0.0)
+                df2 = pd.merge(df21, df22)
+                df2['index_bin'] = pd.cut(df2['index'], 10, labels=False)
+                df2.replace(to_replace=[None], value=np.nan, inplace=True)
+                # df2['memory_type'] = df2.apply(lambda x: 'non-reward' if 'M0' in x['memory'] else 'reward', axis=1)
+                df2['memory_type'] = 'non-reward'
+                df2.loc[df2['memory'].str.endswith(('B1', 'B3', 'C1', 'C3')), 'memory_type'] = 'reward'
+            except:
+                print('no memory trace')
+                df2 = None
+            finally:
+                df1 = df1.astype({'index_bin': float, ':utility': float})
+                df2 = df2.astype({'index_bin': float, ':Reference-Count': float, ':Last-Retrieval-Activation': float})
+                return df1, df2
+
+        else:
+            actr.hide_output()
+            # production trace
+            df1 = pd.DataFrame(np.array([self.actr_production_names,
+                                         [actr.spp(p, ':utility')[0][0] for p in self.actr_production_names]]).T,
+                               columns=['action', ':utility']).astype({':utility': float}).reset_index()
+            df1['state'] = df1.apply(lambda x: 'STATE1' if ('CHOOSE-STATE1' in x['action']) else 'STATE2', axis=1)
+            df1['response'] = df1.apply(lambda x: 'LEFT' if ('LEFT' in x['action']) else 'RIGHT', axis=1)
+
+            # memory trace
+            #chunk_names = ['M-A1', 'M-A2', 'M-A3', 'M-A4', 'M-B1', 'M-B2', 'M-B3', 'M-B4', 'M-C1', 'M-C2', 'M-C3', 'M-C4']
+            df2 = pd.DataFrame(np.array([self.actr_chunk_names,
+             [actr.sdp(t, ':Reference-Count')[0][0] for t in self.actr_chunk_names],
+             [actr.sdp(t, ':Activation')[0][0] for t in self.actr_chunk_names],
+             [actr.sdp(t, ':Last-Retrieval-Activation')[0][0] for t in self.actr_chunk_names]]).T,
+             columns=['memory', ':Reference-Count', ':Activation', ':Last-Retrieval-Activation']).astype({':Reference-Count': float,
+                     ':Activation': float, ':Last-Retrieval-Activation': float}).reset_index()
+
             df2.replace(to_replace=[None], value=np.nan, inplace=True)
-            # df2['memory_type'] = df2.apply(lambda x: 'non-reward' if 'M0' in x['memory'] else 'reward', axis=1)
             df2['memory_type'] = 'non-reward'
             df2.loc[df2['memory'].str.endswith(('B1', 'B3', 'C1', 'C3')), 'memory_type'] = 'reward'
-        except:
-            print('no memory trace')
-            df2 = None
-        finally:
-            df1 = df1.astype({'index_bin': float, ':utility': float})
-            df2 = df2.astype({'index_bin': float, ':Reference-Count': float, ':Last-Retrieval-Activation': float})
             return df1, df2
 
     def __str__(self):

@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model2.lisp
-;;; Version     :v2.2
+;;; Version     :v2.3
 ;;;
 ;;; Description : model-base 
 ;;;
@@ -679,7 +679,7 @@
 ;;; ----------------------------------------------------------------
 
 (p refresh-memory
-  "refresh memorty "
+  "refresh memorty  !!!update: no longer retrieve, but encode "
    ?imaginal>
      state free
      buffer full
@@ -703,10 +703,11 @@
 ==>
    
    =goal>
+    step  refresh-memory  ; infinite refresh
    
    =imaginal>
    
-   +retrieval>
+   +imaginal>
        isa wm
        status  PROCESS
        left-stimulus  =LEFT
@@ -715,7 +716,7 @@
        curr-state  =CURR
        next-state  =NEXT
        response  =RESP
-       :recently-retrieved reset
+       ; :recently-retrieved reset
 )
 
 (p refresh-success
@@ -726,29 +727,8 @@
    
    ?retrieval>
      state free
-     buffer full
-   
-   =goal>
-     step  refresh-memory
-   
-==> 
-   
-   =goal>
-    step attend-stimulus 
-   
-   -imaginal>
-   
-   -retrieval>
- )
+     ; buffer full
 
-(p refresh-failure
- "failure refresh"
-  ?imaginal>
-     state free 
-   
-   ?retrieval>
-     buffer failure
-   
    =goal>
      step  refresh-memory
    
@@ -758,7 +738,7 @@
     step attend-stimulus 
    
    -imaginal>
-   
+
    -retrieval>
  )
 

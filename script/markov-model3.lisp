@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model3.lisp
-;;; Version     :v3.2
+;;; Version     :v3.3
 ;;;
 ;;; Description : model-motivation 
 ;;;
@@ -885,7 +885,7 @@
 ;;; ---------------------------------------------------------------- 
 
 (p refresh-memory
-  "refresh memorty "
+  "refresh memorty   !!!major updates: refreshing until M value is negative "
    ?imaginal>
      state free
      buffer full
@@ -896,6 +896,10 @@
    
    =goal>
      step  refresh-memory
+     > updated-motivation 0 
+       motivation =MOT
+       time-onset =TIME
+       updated-motivation =U
    
    =imaginal>
        status  PROCESS
@@ -908,11 +912,17 @@
    
 ==>
    
+   !bind!       =CURRTIME (mp-time)
+   !bind!       =DURATION (- =CURRTIME =TIME)
+   !bind! =DIFF (- =MOT =DURATION)
+
    =goal>
+    step  refresh-memory
+    updated-motivation   =DIFF 
    
    =imaginal>
    
-   +retrieval>
+   +imaginal>
        isa wm
        status  PROCESS
        left-stimulus  =LEFT
@@ -921,7 +931,7 @@
        curr-state  =CURR
        next-state  =NEXT
        response  =RESP
-       :recently-retrieved reset
+       ; :recently-retrieved reset
 )
 
 (p refresh-success
@@ -930,12 +940,9 @@
      state free
      buffer full
    
-   ?retrieval>
-     state free
-     buffer full
-   
    =goal>
      step  refresh-memory
+     > updated-motivation 0
    
 ==> 
    
@@ -944,19 +951,17 @@
    
    -imaginal>
    
-   -retrieval>
  )
 
 (p refresh-failure
  "failure refresh"
   ?imaginal>
-     state free 
-   
-   ?retrieval>
-     buffer failure
+     state free
+     buffer full
    
    =goal>
      step  refresh-memory
+     < updated-motivation 0   
    
 ==> 
    
@@ -964,8 +969,6 @@
     step attend-stimulus 
    
    -imaginal>
-   
-   -retrieval>
  )
 
 ;;; ----------------------------------------------------------------

@@ -79,11 +79,14 @@
          :esc t
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
+         ;;; ACTIVATION PARAMETER
          :ans 0.1
-         :lf 0.1    ;immediately retrieve memory
-         :bll .5    ;base-level activation
-         ;:mas 4.0
+         :lf 0.5      ;latency factor: if 0, 
+                    ;immediately retrieve memory (higher activation, retrieve faster)
+         :bll .5    ;enable base-level leanring, decay rate
+         ; :mas 4.0
          :rt -5  ;retrieval threshold
+         ;;; UTILITY PARAMETER
          :ul t
          ;:epl t ; Enable Production Learning
          :egs 0.1
@@ -94,11 +97,13 @@
          :show-focus t 
          :needs-mouse t
          :auto-attend t
+
+         ;;; TRACE PARAMETER
          :model-warnings nil
          :v nil
-         :trace-detail low
-         :ult nil
-         :act nil
+         ;:trace-detail low
+         ;:ult t
+         ; :act t
          :trace-filter production-firing-only
          ;:pct t
          ;:blt t
