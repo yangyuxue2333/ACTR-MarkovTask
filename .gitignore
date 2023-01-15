@@ -11,3 +11,5 @@ data/
 */old/
 script/markov-model2-*
 script/markov-model3-*
+.R*
+*.Rproj
