@@ -112,10 +112,10 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
         beh['epoch'] = i
         
         if log: 
-            file_path = log_simulation(beh, dir_path=log, file_name=model+'-sim-logdata', header=(not i))
-            log_simulation(state1stay, dir_path=log, file_name=model+'-sim-staydata', header=(not i))
-            log_simulation(utrace, dir_path=log, file_name=model+'-actr-udata', header=(not i))
-            log_simulation(atrace, dir_path=log, file_name=model+'-actr-adata', header=(not i))
+            file_path = log_simulation(beh, dir_path=log, file_name=model+'-sim-logdata')
+            log_simulation(state1stay, dir_path=log, file_name=model+'-sim-staydata')
+            log_simulation(utrace, dir_path=log, file_name=model+'-actr-udata')
+            log_simulation(atrace, dir_path=log, file_name=model+'-actr-adata')
             
         else:
             beh_list.append(beh)
@@ -161,7 +161,7 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
 
         return df_beh, df_state1stay, df_utrace, df_atrace 
 
-def log_simulation(df, dir_path='', file_name='', header=False, verbose=False):
+def log_simulation(df, dir_path='', file_name='', verbose=False):
     data_dir_path = '../data/'+dir_path
     if not os.path.exists(data_dir_path): 
         os.makedirs(data_dir_path)
@@ -169,8 +169,10 @@ def log_simulation(df, dir_path='', file_name='', header=False, verbose=False):
     # file_path=data_dir_path+file_name+today+'.csv'
     file_path = data_dir_path + file_name + '.csv'
     mode='w'
+    header = True
     if os.path.exists(file_path):
         mode='a' 
+        header = False
     df.to_csv(file_path, mode=mode, header=header)
     if verbose: print('>> saved..', file_name)
     return file_path
@@ -187,6 +189,6 @@ def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=
     if os.path.exists(log_path):
         mode='a' 
         header=False
-    df.to_csv(log_path, mode=mode, header=header)
+    df.to_csv(log_path, mode=mode, header=header, index=True)
     if verbose: print('>> saved..', log_path)
     

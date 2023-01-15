@@ -841,7 +841,7 @@ class MarkovACTR(MarkovState):
                                             'received_reward',
                                             'state_frequency',
                                             'reward_frequency',
-                                            'm_parameter'])
+                                            'm_parameter']).reset_index()
 
     def calculate_stay_probability(self):
         """
@@ -951,7 +951,7 @@ class MarkovACTR(MarkovState):
                                                                'C2':'reward_probability_C2'}, axis=1)
         # dfr_max = dfr.loc[dfr.groupby(['index'])['reward_probability'].idxmax(axis=0)]
         # merge beh data, optimal beh estimation and reward probabilities
-        df = pd.merge(pd.merge(self.df_behaviors().reset_index(), self.df_optimal_behaviors()), dfr, how='left')
+        df = pd.merge(pd.merge(self.df_behaviors(), self.df_optimal_behaviors()), dfr, how='left')
 
         df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
         df['received_reward_sum'] = df['received_reward_norm'].cumsum()
@@ -1217,7 +1217,7 @@ class MarkovHuman(MarkovState):
         return df
 
     def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
-        df = pd.merge(self.df_behaviors().reset_index(), self.df_optimal_behaviors())
+        df = pd.merge(self.df_behaviors(), self.df_optimal_behaviors())
         # df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
         df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
         df['received_reward_sum'] = df['received_reward_norm'].cumsum()
