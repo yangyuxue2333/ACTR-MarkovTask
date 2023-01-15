@@ -199,10 +199,13 @@ def load_simulation(data_path='data/param_simulation_1114/param_id0', model_name
                                                                                                      errors='ignore')
     df1_state1stay = pd.read_csv(os.path.join(data_path, model_name + '-sim-staydata.csv')).dropna(axis=0).apply(
         pd.to_numeric, errors='ignore')
-    df1_utrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-udata.csv')).fillna(0).apply(pd.to_numeric,
-                                                                                                      errors='ignore')
-    df1_atrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-adata.csv')).fillna(0).apply(pd.to_numeric,
-                                                                                                      errors='ignore')
+    df1_utrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-udata.csv'))
+    df1_utrace[':utility'] = df1_utrace[':utility'].apply(pd.to_numeric, errors='coerce')
+
+    df1_atrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-adata.csv'))
+    df1_atrace[':Reference-Count'] = df1_atrace[':Reference-Count'].apply(pd.to_numeric,errors='coerce')
+    df1_atrace[':Activation'] = df1_atrace[':Activation'].apply(pd.to_numeric, errors='coerce')
+    df1_atrace[':Last-Retrieval-Activation'] = df1_atrace[':Last-Retrieval-Activation'].apply(pd.to_numeric, errors='coerce')
 
     param_log = pd.read_csv(os.path.join(data_path, 'log.csv')).loc[0]
 
