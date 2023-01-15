@@ -192,3 +192,21 @@ def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=
     df.to_csv(log_path, mode=mode, header=header, index=True)
     if verbose: print('>> saved..', log_path)
     
+
+def load_simulation(data_path='data/param_simulation_1114/param_id0', model_name='markov-model1', verbose=True):
+    assert (os.getcwd().split("/")[-1] == 'ACTR-MarkovTask')
+    df1 = pd.read_csv(os.path.join(data_path, model_name + '-sim-logdata.csv')).dropna(axis=0).apply(pd.to_numeric,
+                                                                                                     errors='ignore')
+    df1_state1stay = pd.read_csv(os.path.join(data_path, model_name + '-sim-staydata.csv')).dropna(axis=0).apply(
+        pd.to_numeric, errors='ignore')
+    df1_utrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-udata.csv')).fillna(0).apply(pd.to_numeric,
+                                                                                                      errors='ignore')
+    df1_atrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-adata.csv')).fillna(0).apply(pd.to_numeric,
+                                                                                                      errors='ignore')
+
+    param_log = pd.read_csv(os.path.join(data_path, 'log.csv')).loc[0]
+
+    if verbose:
+        print('...SUCCESSFULLY LOADED DATA...')
+        print(param_log)
+    return df1, df1_state1stay, df1_utrace, df1_atrace
