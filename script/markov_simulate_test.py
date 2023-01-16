@@ -111,7 +111,8 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
         atrace['epoch'] = i
         beh['epoch'] = i
         
-        if log: 
+        if log:
+            df_beh, df_state1stay, df_utrace, df_atrace = beh, state1stay, utrace, atrace
             file_path = log_simulation(beh, dir_path=log, file_name=model+'-sim-logdata')
             log_simulation(state1stay, dir_path=log, file_name=model+'-sim-staydata')
             log_simulation(utrace, dir_path=log, file_name=model+'-actr-udata')
@@ -130,12 +131,12 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
             # utrace_list.append(utrace)
             # atrace_list.append(atrace)
 
-            # plot 
-            rewards += beh['received_reward'].sum()/len(beh) 
+            # plot
+            rewards += beh['received_reward'].sum()/len(beh)
         
     if log:
         log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params, file_path=file_path)
-        return 
+        return df_beh, df_state1stay, df_utrace, df_atrace
     else:
         # merge df list
         df_beh = pd.concat(beh_list, axis=0)
@@ -193,12 +194,17 @@ def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=
     if verbose: print('>> saved..', log_path)
     
 
-def load_simulation(data_path='data/param_simulation_1114/param_id0', model_name='markov-model1', verbose=True):
+def load_simulation(data_path='data/param_simulation_1114/param_id0', model_name='markov-model1', index_thres=None, verbose=True):
     assert (os.getcwd().split("/")[-1] == 'ACTR-MarkovTask')
     df1 = pd.read_csv(os.path.join(data_path, model_name + '-sim-logdata.csv')).dropna(axis=0).apply(pd.to_numeric,
                                                                                                      errors='ignore')
     df1_state1stay = pd.read_csv(os.path.join(data_path, model_name + '-sim-staydata.csv')).dropna(axis=0).apply(
         pd.to_numeric, errors='ignore')
+
+    if index_thres:
+        df1 = df1[df1['index'] < index_thres]
+        df1_state1stay = df1_state1stay[df1_state1stay['index'] < index_thres]
+
     df1_utrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-udata.csv'))
     df1_utrace[':utility'] = df1_utrace[':utility'].apply(pd.to_numeric, errors='coerce')
 

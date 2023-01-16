@@ -80,17 +80,17 @@
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
          ;;; ACTIVATION PARAMETER
-         :ans 0.1
+         :ans 0.2
          :lf 0.5      ;latency factor: if 0, 
                     ;immediately retrieve memory (higher activation, retrieve faster)
-         :bll .5    ;enable base-level leanring, decay rate
-         ; :mas 4.0
+         :bll 0.5    ;enable base-level leanring, decay rate
+         :mas 2
          :rt -5  ;retrieval threshold
          ;;; UTILITY PARAMETER
          :ul t
          ;:epl t ; Enable Production Learning
-         :egs 0.1
-         ;:alpha 0.4
+         :egs 0.2
+         :alpha 0.2
          ;:imaginal-activation 3.0
          ;:motor-feature-prep-time 0.01
          ;:dat 0.05  ; default action time for all productions
