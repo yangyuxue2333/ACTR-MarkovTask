@@ -27,7 +27,7 @@ from datetime import datetime
 from functools import reduce
 import scipy.optimize as opt
 import itertools
-
+from pandas import CategoricalDtype
 
 STATE = (0, 1, 2)
 TEXT = ("", "A1", "A2", "B1", "B2", "C1", "C2")
@@ -848,11 +848,21 @@ class MarkovACTR(MarkovState):
         Calculate the probability of stay:
             A trial is marked as "STAY" if the agent selects the same action in current trial (e.g. LEFT)
             as the previous trial
+
+        NOTE: will be -1 trials because exclude NA rows
         """
+
         df = self.df_behaviors()
-        df['state1_stay'] = df['state1_response'].shift(-1)
+        df['state1_stay'] = df['state1_response'].shift() # first row is NA (look at previsou trial)
         df['state1_stay'] = df.apply(
             lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0), axis=1)
+        df['pre_received_reward'] = df['received_reward'].shift()
+
+        df = df.dropna(subset=['state1_stay', 'pre_received_reward'])
+        df['pre_received_reward'] = df.apply(lambda x: 'non-reward' if x['pre_received_reward'] == 0 else 'reward', axis=1)
+        df = df.astype({'state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
+                        'pre_received_reward': CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
+        df = df[['index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay']]
         return df
 
     def calculate_real_frequency(self, merge=False):
