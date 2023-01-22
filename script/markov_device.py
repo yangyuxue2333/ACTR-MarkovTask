@@ -832,7 +832,8 @@ class MarkovACTR(MarkovState):
             s.reward_frequency,
             self.task_parameters['M']
         ] for s in self.log]
-        return pd.DataFrame(rows, columns= ['state1_response',
+
+        df = pd.DataFrame(rows, columns= ['state1_response',
                                             'state1_response_time',
                                             'state1_selected_stimulus',
                                             'state2_response',
@@ -842,6 +843,10 @@ class MarkovACTR(MarkovState):
                                             'state_frequency',
                                             'reward_frequency',
                                             'm_parameter']).reset_index()
+        df['pre_received_reward'] = df['received_reward'].shift()
+        df['pre_received_reward'] = df.apply(lambda x: x['pre_received_reward'] if  pd.isnull(x['pre_received_reward'])\
+            else ('non-reward' if x['pre_received_reward']==0 else 'reward'), axis=1)
+        return df
 
     def calculate_stay_probability(self):
         """
@@ -856,13 +861,12 @@ class MarkovACTR(MarkovState):
         df['state1_stay'] = df['state1_response'].shift() # first row is NA (look at previsou trial)
         df['state1_stay'] = df.apply(
             lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0), axis=1)
-        df['pre_received_reward'] = df['received_reward'].shift()
-
+        # df['pre_received_reward'] = df['received_reward'].shift()
+        # df['pre_received_reward'] = df.apply(lambda x: 'non-reward' if x['pre_received_reward'] == 0 else 'reward', axis=1)
         df = df.dropna(subset=['state1_stay', 'pre_received_reward'])
-        df['pre_received_reward'] = df.apply(lambda x: 'non-reward' if x['pre_received_reward'] == 0 else 'reward', axis=1)
         df = df.astype({'state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
                         'pre_received_reward': CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
-        df = df[['index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay']]
+        df = df[['index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay', 'state1_response_time', 'state2_response_time']]
         return df
 
     def calculate_real_frequency(self, merge=False):

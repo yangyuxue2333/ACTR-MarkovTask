@@ -256,7 +256,7 @@ def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', mo
     df1_state1stay = pd.read_csv(os.path.join(data_path, model_name + '-sim-staydata.csv')).dropna(axis=0).apply(pd.to_numeric, errors='ignore')
 
     # temporarily fix 0115 simulation stay probability errors
-    if 'pre_received_reward' not in df1.columns:
+    if 'pre_received_reward' not in df1_state1stay.columns:
         print('temporarily fix 0115 simulation stay probability errors')
         df1_state1stay = temporary_update_stay_probability(df1)
 
@@ -391,7 +391,7 @@ def process_subject_data(data_dir='./data/human/task_data', log=None):
 
 
 # =================================================== #
-# PROCESS SIMULATED DATA
+# AGGREGATE SIMULATED DATA
 # =================================================== #
 
 def calculate_agg_data(data_path, idx):
@@ -435,7 +435,6 @@ def calculate_agg_data(data_path, idx):
 
     dftime_aggregate['id'] = idx
     return dfstay_aggregate, dftime_aggregate
-
 
 def save_agg_model_data(main_dir = 'data/model/param_simulation_0115'):
     """
