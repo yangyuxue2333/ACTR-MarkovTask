@@ -1,3 +1,5 @@
+
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import CategoricalDtype
@@ -11,6 +13,7 @@ from datetime import date
 import time
 import glob
 from scipy.stats import norm
+import itertools
 
 global convergence
 convergence = 100
@@ -43,11 +46,11 @@ def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, th
         return simulate(model, n, task_params, actr_params, thresh)
 
 
-def try_simulation_example(log_path = 'param_simulation_test/', n=50, e=2):
+def try_simulation_example(log_dir = '../data/model/param_simulation_test/', model_name="markov-model1", n=5, e=2):
 
     # task parameter combination
-    m = [0, 0.5, 1, 1.5]
-    r = [3, 5, 10]
+    m = [0, 0.5, 1]  # [0, 0.5, 1, 1.5]
+    r = [0.1, 5, 10]  # [3, 5, 10]
     random_walk = [True]
 
     # actr parameter combination
@@ -56,18 +59,15 @@ def try_simulation_example(log_path = 'param_simulation_test/', n=50, e=2):
     alpha = [0.2, 0.7]
     lf = [0.5, 1]
 
-
-    task_param_set = list(itertools.product(*[random_walk, m, r]))[:1]
-    actr_param_set = list(itertools.product(*[ans, egs, alpha, lf]))[:1]
-
+    task_param_set = list(itertools.product(*[random_walk, m, r]))[:5]
+    actr_param_set = list(itertools.product(*[ans, egs, alpha, lf]))[:5]
 
     print('TOTAL NUM PARAMETER COMBINATION [%d] \n\t[TASK PARAM: (%d)], \n\t[ACT-R PARAM: (%d)]' % (
     len(task_param_set) * len(actr_param_set), len(task_param_set), len(actr_param_set)))
 
-
-    # START
     start_time = time.time()
-    for i in tqdm(range(len(task_param_set))):
+
+    for i in range(len(task_param_set)):
 
         random_walk, m, r = task_param_set[i]
         task_params = {'REWARD': {'B1': r, 'B2': r, 'C1': r, 'C2': r}, 'RANDOM_WALK': random_walk, 'M': m}
@@ -79,20 +79,15 @@ def try_simulation_example(log_path = 'param_simulation_test/', n=50, e=2):
             param_folder_id = 'param_task%d_actr%d/' % (i, j)
 
             # check if alreay simulated
-            if not check_parameters(log_file_path='../data/' + log_path + param_folder_id + 'log.csv',
-                                    task_param_set=task_params, actr_param_set=actr_params, epoch=e, n=n):
-                simulate_stay_probability(model="markov-model1", epoch=e, n=n, task_params=task_params,
-                                          actr_params=actr_params, log=log_path + param_folder_id)
-                simulate_stay_probability(model="markov-model2", epoch=e, n=n, task_params=task_params,
-                                          actr_params=actr_params, log=log_path + param_folder_id)
-                simulate_stay_probability(model="markov-model3", epoch=e, n=n, task_params=task_params,
-                                          actr_params=actr_params, log=log_path + param_folder_id)
-                print("COMPLETE...")
+            if not check_parameters(log_file_path='%s%s%s' % (log_dir, param_folder_id, 'log.csv'), task_param_set=task_params, actr_param_set=actr_params, epoch=e, n=n):
+                simulate_stay_probability(model=model_name, epoch=e, n=n, task_params=task_params, actr_params=actr_params, log='%s%s' % (log_dir, param_folder_id))
+                print("COMPLETE...%s" % (param_folder_id))
             else:
-                print("SKIP ....")
+                print("SKIP ....%s" % (param_folder_id))
 
     print('RUNNING TIME: [%.2f]' % (time.time() - start_time))
-    return
+
+  #    # c python -c 'from markov_simulate_test import *; try_simulation_example();'
 
 
 # def simulate_response_monkey(model="markov-monkey", epoch=1, n=20):
@@ -130,14 +125,15 @@ def try_simulation_example(log_path = 'param_simulation_test/', n=50, e=2):
 #     return df_beh, df_state1stay
 
 
-def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, log=False):
+def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, log=False, verbose=False):
     rewards = 0.0 
     beh_list, state1stay_list, utrace_list, atrace_list = [], [], [], []
 
     start_time = time.time()
-    for i in tqdm(range(epoch)):
+    # for i in tqdm(range(epoch)):
+    for i in range(epoch):
         m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=0)
-        if (i==0): print(m)
+        if (i==0 and verbose): print(m)
 
         # stay probability
         state1stay = m.calculate_stay_probability()
@@ -301,6 +297,86 @@ def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n):
         if log_param_set == curr_param_set:
             return True
     return False
+
+
+# def get_df_log(log_dir='data/model/param_simulation_0121/'):
+#     """
+#     :return a df of all df_log contain simulation parameters
+#     :param log_dir: 'data/model/param_simulation_0121/')
+#     :return:
+#     """
+#     assert (os.getcwd().split("/")[-1] == 'ACTR-MarkovTask')
+#     df_list = []
+#     param_files = np.sort(glob.glob(log_dir + 'param*/log.csv'))
+#     if len(param_files) == 0:
+#         return pd.DataFrame()
+# 
+#     for f in param_files:
+#         df_log = pd.read_csv(f, header=0, index_col=0).drop(columns=['file_path']).drop_duplicates()
+#         df_log['param_id'] = f.split('/')[-2]
+#         df_list.append(df_log)
+# 
+#     df_log = pd.concat(df_list, axis=0).reset_index()
+#     df_log = df_log.assign(task_id=lambda x: x['param_id'].str.split('_', expand=True)[1].str.extract('(\d+)'),
+#                            actr_id=lambda x: x['param_id'].str.split('_', expand=True)[2].str.extract('(\d+)')).astype({
+#         'task_id': int, 'actr_id': int
+#     })
+#     return df_log
+# 
+# def check_parameters(log_dir, task_param_set, actr_param_set, epoch, n):
+#     """
+#     :param log_dir: 'data/model/param_simulation_0121/'
+#     :param task_param_set:
+#     :param actr_param_set:
+#     :param epoch:
+#     :param n:
+#     :return:
+#     """
+#     '''
+#     if not os.path.exists(log_file_path):
+#         return False
+#     log = pd.read_csv(log_file_path, header=0, index_col=0).drop(columns=['file_path'])
+#     '''
+#     log = get_df_log(log_dir=log_dir)
+#     if log.empty:
+#         return False
+# 
+#     log_param_list = log.to_records(index=False).tolist()
+#     for log_param_set in log_param_list:
+#         curr_param_set = (epoch, n,
+#                           actr_param_set['seed'],
+#                           actr_param_set['ans'],
+#                           actr_param_set['egs'],
+#                           actr_param_set['alpha'],
+#                           # actr_param_set['v'],
+#                           actr_param_set['lf'],
+#                           actr_param_set['bll'],
+#                           actr_param_set['mas'],
+#                           str(task_param_set['REWARD']),
+#                           task_param_set['RANDOM_WALK'],
+#                           task_param_set['M'])
+# 
+#         if log_param_set == curr_param_set:
+#             return True
+#     return False
+# 
+# def get_next_param_id(log_dir, i, j):
+#     """
+#     :param log_dir: 'data/model/param_simulation_0121/'
+#     :param i: 
+#     :param j: 
+#     :return: 
+#     """
+#     log = get_df_log(log_dir=log_dir)
+#     if log.empty:
+#         # print('no log')
+#         next_task_id, next_actr_id = i, j
+#     else:
+#         # print('has log')
+#         next_task_id = log['task_id'].max() + 1
+#         next_actr_id = log['actr_id'].max() + 1
+#     param_id = 'param_task%d_actr%d/' % (next_task_id, next_actr_id)
+#     return param_id
 
 
 def temporary_update_stay_probability(df):
@@ -542,6 +618,7 @@ def param_id2value(data_dir='data/model/param_simulation_0115', param_id='param_
 
 
 def calculate_maxLL(df1, df2, data_dir='data/model/param_simulation_0115'):
+    assert ('state1_stay_z' in df1.columns and 'rt_z' in df2.columns)
     # save LL
     df1_rename = df1.rename(
         columns={'state1_stay_z': 'z', 'state1_stay_probz': 'probz', 'state1_stay_logprobz': 'logprobz'})
@@ -553,7 +630,7 @@ def calculate_maxLL(df1, df2, data_dir='data/model/param_simulation_0115'):
     df_temp2 = pd.merge(df_merged, df_temp1, how='left')
     df_temp2['is_max_param_id'] = df_temp2.apply(lambda x: x['LL'] == x['maxLL'], axis=1)
     # df_temp2['max_param_values'] = df_temp2.apply(lambda x: [param_id2value(data_dir=data_dir, param_id=param_id) for param_id in x], axis=1)
-    df_temp2['param_value.m'] = df_temp2['id.m'].apply(lambda x: param_id2value(param_id=str(x)))
+    df_temp2['param_value.m'] = df_temp2['id.m'].apply(lambda x: param_id2value(data_dir=data_dir, param_id=str(x)))
     df_temp3 = df_temp2[df_temp2['is_max_param_id']].groupby(['id.s', 'model_name'])['id.m'].apply(list).reset_index(
         name='max_param_ids')
     res = pd.merge(df_temp2, df_temp3)
@@ -598,10 +675,10 @@ def save_max_loglikelihood_data(model_dir='data/model/param_simulation_0115',
 
                 df1 = pd.concat(dfstay_list, axis=0, ignore_index=True)
                 df2 = pd.concat(dfrt_list, axis=0, ignore_index=True)
-                dfmaxLL = calculate_maxLL(df1, df2)
+                dfmaxLL = calculate_maxLL(df1, df2, data_dir=model_dir)
 
                 # save
-                dest_dir = '%s/%s/loglikelihood' % (subject_dir, subject_id)
+                dest_dir = '%s/%s/loglikelihood-%s' % (subject_dir, subject_id, model_dir.split('/')[-1].split('_')[-1])
                 dest_file_name1 = '%s/%s-%s-ll-staydata.csv' % (dest_dir, model_name, str.lower(subj_data_type))
                 dest_file_name2 = '%s/%s-%s-ll-rtdata.csv' % (dest_dir, model_name, str.lower(subj_data_type))
                 dest_file_name3 = '%s/%s-%s-ll-maxLL.csv' % (dest_dir, model_name, str.lower(subj_data_type))
@@ -613,3 +690,6 @@ def save_max_loglikelihood_data(model_dir='data/model/param_simulation_0115',
                 df2.to_csv(dest_file_name2, header=True, index=True)
                 dfmaxLL.to_csv(dest_file_name3, header=True, index=True)
                 print('SVING maxLL FILES...SUB-[%s]' % (subject_id))
+
+
+
