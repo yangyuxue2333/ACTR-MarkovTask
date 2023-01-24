@@ -317,6 +317,20 @@ def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n, mo
         # print('No...', log_param_set, curr_param_set)
     return False
 
+def simple_check_exist(log_dir, param_folder_id, target_num_files):
+    """
+    Check whether simulation exist
+    :param log_dir:
+    :param param_folder_id:
+    :return:
+    """
+    fs = glob.glob(log_dir + param_folder_id + '/*.csv')
+    if len(fs) == target_num_files and 'log.csv' in fs:
+        return True
+    else
+        return False
+
+
 
 # def get_df_log(log_dir='data/model/param_simulation_0121/'):
 #     """
