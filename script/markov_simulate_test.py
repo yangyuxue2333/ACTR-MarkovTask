@@ -68,8 +68,8 @@ def try_simulation_example(log_dir = '../data/model/param_simulation_test/', mod
     alpha = [0.2, 0.7]
     lf = [0.5, 1]
 
-    task_param_set = list(itertools.product(*[random_walk, m, r]))[:5]
-    actr_param_set = list(itertools.product(*[ans, egs, alpha, lf]))[:5]
+    task_param_set = list(itertools.product(*[random_walk, m, r]))
+    actr_param_set = list(itertools.product(*[ans, egs, alpha, lf]))
 
     print('TOTAL NUM PARAMETER COMBINATION [%d] \n\t[TASK PARAM: (%d)], \n\t[ACT-R PARAM: (%d)]' % (
     len(task_param_set) * len(actr_param_set), len(task_param_set), len(actr_param_set)))
