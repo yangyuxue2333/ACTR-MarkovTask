@@ -47,7 +47,16 @@ def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, th
 
 
 def try_simulation_example(log_dir = '../data/model/param_simulation_test/', model_name="markov-model1", n=5, e=2):
-
+    """
+    in terminal
+    >> ./script/
+    >> python -c "from markov_simulate_test import *; try_simulation_example(log_dir = '../data/model/param_simulation_test/', model_name='markov-model3', n=500, e=50);"
+    :param log_dir:
+    :param model_name:
+    :param n:
+    :param e:
+    :return:
+    """
     # task parameter combination
     m = [0, 0.5, 1]  # [0, 0.5, 1, 1.5]
     r = [0.1, 5, 10]  # [3, 5, 10]
@@ -79,16 +88,19 @@ def try_simulation_example(log_dir = '../data/model/param_simulation_test/', mod
             param_folder_id = 'param_task%d_actr%d/' % (i, j)
 
             # check if alreay simulated
-            if not check_parameters(log_file_path='%s%s%s' % (log_dir, param_folder_id, 'log.csv'), task_param_set=task_params, actr_param_set=actr_params, epoch=e, n=n):
+            if not check_parameters(log_file_path='%s%s%s' % (log_dir, param_folder_id, 'log.csv'),
+                                    task_param_set=task_params,
+                                    actr_param_set=actr_params,
+                                    epoch=e,
+                                    n=n,
+                                    model_name=model_name,
+                                    param_id=param_folder_id):
                 simulate_stay_probability(model=model_name, epoch=e, n=n, task_params=task_params, actr_params=actr_params, log='%s%s' % (log_dir, param_folder_id))
                 print("COMPLETE...%s" % (param_folder_id))
             else:
                 print("SKIP ....%s" % (param_folder_id))
 
     print('RUNNING TIME: [%.2f]' % (time.time() - start_time))
-
-  #    # c python -c 'from markov_simulate_test import *; try_simulation_example();'
-
 
 # def simulate_response_monkey(model="markov-monkey", epoch=1, n=20):
 #     rewards = 0.0
@@ -220,7 +232,10 @@ def log_simulation(df, dir_path='', file_name='', verbose=False):
     return file_path
 
 def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=False):
-    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params, 'file_path':file_path}
+    param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params,
+                'model_name':file_path.split('/')[-1].split('-')[1][-1],
+                'param_id':file_path.split('/')[-2],
+                'file_path':file_path,}
     df = pd.DataFrame(param_dict.values(), index=param_dict.keys()).T
     
     data_dir_path = '../data/'+dir_path
@@ -275,7 +290,7 @@ def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', mo
         print(param_log)
     return df1, df1_state1stay, df1_utrace, df1_atrace
 
-def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n):
+def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n, model_name, param_id):
     if not os.path.exists(log_file_path):
         return False
     log = pd.read_csv(log_file_path, header=0, index_col=0).drop(columns=['file_path'])
@@ -292,10 +307,14 @@ def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n):
                           actr_param_set['mas'],
                           str(task_param_set['REWARD']),
                           task_param_set['RANDOM_WALK'],
-                          task_param_set['M'])
+                          task_param_set['M'],
+                          int(model_name[-1]),
+                          param_id.split("/")[0])
 
         if log_param_set == curr_param_set:
+            # print('Found...')
             return True
+        # print('No...', log_param_set, curr_param_set)
     return False
 
 
