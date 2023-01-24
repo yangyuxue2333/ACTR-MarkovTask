@@ -83,7 +83,7 @@ def try_simulation_example(log_dir = '../data/model/param_simulation_test/', mod
 
         for j in range(len(actr_param_set)):
             ans, egs, alpha, lf = actr_param_set[j]
-            actr_params = {'seed': 'nil', 'ans': ans, 'egs': egs, 'alpha': alpha, 'lf': lf, 'bll': 0.5, 'mas': 2}
+            actr_params = {'ans': ans, 'egs': egs, 'alpha': alpha, 'lf': lf, 'bll': 0.5, 'mas': 2}
 
             param_folder_id = 'param_task%d_actr%d/' % (i, j)
 
