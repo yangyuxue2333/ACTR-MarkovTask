@@ -1,4 +1,4 @@
-
+import shutil
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -253,7 +253,7 @@ def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=
 # LOAD SIMULATED DATA
 # =================================================== #
 
-def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', model_name='markov-model1', index_thres=None, verbose=True):
+def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', model_name='markov-model1', index_thres=None, verbose=True, load_agg=False):
     """
     Load simulated data for a single parameter set
     :param data_path:
@@ -263,32 +263,38 @@ def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', mo
     :return:
     """
     assert (os.getcwd().split("/")[-1] == 'ACTR-MarkovTask')
-    df1 = pd.read_csv(os.path.join(data_path, model_name + '-sim-logdata.csv')).dropna(axis=0).apply(pd.to_numeric, errors='ignore')
-    df1_state1stay = pd.read_csv(os.path.join(data_path, model_name + '-sim-staydata.csv')).dropna(axis=0).apply(pd.to_numeric, errors='ignore')
-
-    # temporarily fix 0115 simulation stay probability errors
-    if 'pre_received_reward' not in df1_state1stay.columns:
-        print('temporarily fix 0115 simulation stay probability errors')
-        df1_state1stay = temporary_update_stay_probability(df1)
-
-    if index_thres:
-        df1 = df1[df1['index'] < index_thres]
-        df1_state1stay = df1_state1stay[df1_state1stay['index'] < index_thres]
 
     df1_utrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-udata.csv'))
     df1_utrace[':utility'] = df1_utrace[':utility'].apply(pd.to_numeric, errors='coerce')
 
     df1_atrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-adata.csv'))
-    df1_atrace[':Reference-Count'] = df1_atrace[':Reference-Count'].apply(pd.to_numeric,errors='coerce')
+    df1_atrace[':Reference-Count'] = df1_atrace[':Reference-Count'].apply(pd.to_numeric, errors='coerce')
     df1_atrace[':Activation'] = df1_atrace[':Activation'].apply(pd.to_numeric, errors='coerce')
-    df1_atrace[':Last-Retrieval-Activation'] = df1_atrace[':Last-Retrieval-Activation'].apply(pd.to_numeric, errors='coerce')
+    df1_atrace[':Last-Retrieval-Activation'] = df1_atrace[':Last-Retrieval-Activation'].apply(pd.to_numeric,
+                                                                                              errors='coerce')
 
     param_log = pd.read_csv(os.path.join(data_path, 'log.csv')).loc[0]
 
     if verbose:
-        print('...SUCCESSFULLY LOADED DATA...')
+        print('...SUCCESSFULLY LOADED DATA...AGGREGATE[%s]' % (load_agg))
         print(param_log)
-    return df1, df1_state1stay, df1_utrace, df1_atrace
+
+    if load_agg:
+        df_agg = pd.read_csv(os.path.join(data_path, 'aggregate', model_name + '-agg.csv')).apply(pd.to_numeric, errors='ignore')
+        return df_agg, df1_utrace, df1_atrace
+    else:
+        df1 = pd.read_csv(os.path.join(data_path, model_name + '-sim-logdata.csv')).dropna(axis=0).apply(pd.to_numeric, errors='ignore')
+        df1_state1stay = pd.read_csv(os.path.join(data_path, model_name + '-sim-staydata.csv')).dropna(axis=0).apply(pd.to_numeric, errors='ignore')
+
+        # temporarily fix 0115 simulation stay probability errors
+        if 'pre_received_reward' not in df1_state1stay.columns:
+            print('temporarily fix 0115 simulation stay probability errors')
+            df1_state1stay = temporary_update_stay_probability(df1)
+
+        if index_thres:
+            df1 = df1[df1['index'] < index_thres]
+            df1_state1stay = df1_state1stay[df1_state1stay['index'] < index_thres]
+        return df1, df1_state1stay, df1_utrace, df1_atrace
 
 def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n, model_name, param_id):
     if not os.path.exists(log_file_path):
@@ -319,15 +325,16 @@ def check_parameters(log_file_path, task_param_set, actr_param_set, epoch, n, mo
 
 def simple_check_exist(log_dir, param_folder_id, target_num_files):
     """
-    Check whether simulation exist
+    Check whether simulation exist using the simplest way
     :param log_dir:
     :param param_folder_id:
     :return:
     """
-    fs = glob.glob(log_dir + param_folder_id + '/*.csv')
+    fs = glob.glob('../'+log_dir + param_folder_id + '/*.csv')
+    print(fs)
     if len(fs) == target_num_files and 'log.csv' in fs:
         return True
-    else
+    else:
         return False
 
 
@@ -420,27 +427,28 @@ def temporary_update_stay_probability(df):
         A trial is marked as "STAY" if the agent selects the same action in current trial (e.g. LEFT)
         as the previous trial
     """
-    df['state1_stay'] = df['state1_response'].shift() # first row is NA (look at previsou trial)
-    df['state1_stay'] = df.apply(
+    dff = df.copy()
+    dff['state1_stay'] = dff['state1_response'].shift() # first row is NA (look at previsou trial)
+    dff['state1_stay'] = dff.apply(
         lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0),
         axis=1)
-    df['pre_received_reward'] = df['received_reward'].shift()
+    dff['pre_received_reward'] = dff['received_reward'].shift()
 
-    df = df.dropna(subset=['state1_stay', 'pre_received_reward'])
-    df.loc[:, ['pre_received_reward']] = df.apply(lambda x: 'non-reward' if int(x['pre_received_reward']) == 0 else 'reward', axis=1)
-    df = df.astype({'state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
+    dff = dff.dropna(subset=['state1_stay', 'pre_received_reward'])
+    dff.loc[:, ['pre_received_reward']] = dff.apply(lambda x: 'non-reward' if int(x['pre_received_reward']) == 0 else 'reward', axis=1)
+    dff = dff.astype({'state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
                     'pre_received_reward': CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
     try:
-        df = df[['epoch', 'index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay']]
+        dff = dff[['epoch', 'index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay', 'state1_response_time', 'state2_response_time']]
     except:
-        df['epoch'] = 0
-        return df
-    return df
+        dff['epoch'] = 0
+        return dff
+    return dff
 
 def process_subject_data(data_dir='./data/human/task_data', log=None):
     assert (os.getcwd().split('/')[-1] == 'ACTR-MarkovTask')
     """
-    Load emperical data (Teddy)
+    Load and reformat emperical data (Teddy)
     """
     df_list = []
     for f in np.sort(glob.glob(data_dir + '/%s' % ('*.txt'))):
@@ -503,226 +511,342 @@ def process_subject_data(data_dir='./data/human/task_data', log=None):
 # AGGREGATE SIMULATED DATA
 # =================================================== #
 
-def calculate_agg_data(data_path, idx):
+# def calculate_agg_data(data_path, idx):
+#     """
+#     Calculate the aggregated dataa cross epochs, index
+#     :param data_path: the path of df
+#     :param id: identification number, could be param_id or subject_id
+#     :return: two aggregated dataframes, stay probability and response time by pre_received_reward and state_frequency
+# =    """
+#     assert (os.getcwd().split('/')[-1] == 'ACTR-MarkovTask') and (os.path.exists(data_path))
+#
+#     df = pd.read_csv(data_path)
+#     dfstay = temporary_update_stay_probability(df)
+#     dfstay = pd.merge(dfstay, df.drop(columns=['pre_received_reward']))
+#
+#     df_long = dfstay[['pre_received_reward', 'state_frequency', 'state1_response_time', 'state2_response_time']] \
+#         .melt(id_vars=['pre_received_reward', 'state_frequency'],
+#               value_vars=['state1_response_time', 'state2_response_time'],
+#               var_name='state_name',
+#               value_name='response_time')
+#
+#     df_long['state_name'] = df_long.apply(lambda x: x['state_name'].split('_')[0], axis=1)
+#     df_long['state'] = df_long.apply(lambda x: x['state_name'] + ':' + x['state_frequency'], axis=1)
+#     df_long = df_long.astype({'state': CategoricalDtype(categories=['state1:common',
+#                                                                     'state1:rare',
+#                                                                     'state2:common',
+#                                                                     'state2:rare'], ordered=True)})
+#     df_long = df_long.dropna()
+#
+#     dfstay_aggregate = dfstay \
+#         .groupby(['pre_received_reward', 'state_frequency']) \
+#         .agg(state1_stay_mean=('state1_stay', 'mean'),
+#              state1_stay_sd=('state1_stay', 'std'),
+#              state1_stay_se=('state1_stay', 'sem')).fillna(0.0).reset_index()
+#
+#     dfstay_aggregate['id'] = idx
+#
+#     dftime_aggregate = df_long.groupby(['pre_received_reward', 'state_name', 'state_frequency']) \
+#         .agg(reponse_time_mean=('response_time', 'mean'),
+#              reponse_time_sd=('response_time', 'std'),
+#              reponse_time_se=('response_time', 'sem')).fillna(0.0).reset_index()
+#
+#     dftime_aggregate['id'] = idx
+#     return dfstay_aggregate, dftime_aggregate
+
+def calculate_agg_data(data_path, param_id):
     """
-    :param data_path: the path of df
-    :param id: identification number, could be param_id or subject_id
-    :return: two aggregated dataframes, stay probability and response time by pre_received_reward and state_frequency
-=    """
-    assert (os.getcwd().split('/')[-1] == 'ACTR-MarkovTask') and (os.path.exists(data_path))
-
+    data_path ends with *staydata.csv
+    :param data_path:
+    :return:
+    """
     df = pd.read_csv(data_path)
-    dfstay = temporary_update_stay_probability(df)
-    dfstay = pd.merge(dfstay, df.drop(columns=['pre_received_reward']))
+    if 'pre_received_reward' not in df.columns:
+        df = temporary_update_stay_probability(df)
+    df_agg = df.groupby(['state_frequency', 'pre_received_reward']).agg({'state1_stay': ('mean', 'std', 'sem'),
+                                                                 'state1_response_time': ('mean', 'std', 'sem'),
+                                                                 'state2_response_time': (
+                                                                 'mean', 'std', 'sem')}).reset_index()
+    df_agg['id'] = param_id
+    return df_agg
 
-    df_long = dfstay[['pre_received_reward', 'state_frequency', 'state1_response_time', 'state2_response_time']] \
-        .melt(id_vars=['pre_received_reward', 'state_frequency'],
-              value_vars=['state1_response_time', 'state2_response_time'],
-              var_name='state_name',
-              value_name='response_time')
-
-    df_long['state_name'] = df_long.apply(lambda x: x['state_name'].split('_')[0], axis=1)
-    df_long['state'] = df_long.apply(lambda x: x['state_name'] + ':' + x['state_frequency'], axis=1)
-    df_long = df_long.astype({'state': CategoricalDtype(categories=['state1:common',
-                                                                    'state1:rare',
-                                                                    'state2:common',
-                                                                    'state2:rare'], ordered=True)})
-    df_long = df_long.dropna()
-
-    dfstay_aggregate = dfstay \
-        .groupby(['pre_received_reward', 'state_frequency']) \
-        .agg(state1_stay_mean=('state1_stay', 'mean'),
-             state1_stay_sd=('state1_stay', 'std'),
-             state1_stay_se=('state1_stay', 'sem')).fillna(0.0).reset_index()
-
-    dfstay_aggregate['id'] = idx
-
-    dftime_aggregate = df_long.groupby(['pre_received_reward', 'state_name', 'state_frequency']) \
-        .agg(reponse_time_mean=('response_time', 'mean'),
-             reponse_time_sd=('response_time', 'std'),
-             reponse_time_se=('response_time', 'sem')).fillna(0.0).reset_index()
-
-    dftime_aggregate['id'] = idx
-    return dfstay_aggregate, dftime_aggregate
-
-def save_agg_model_data(main_dir = 'data/model/param_simulation_0115'):
+def save_agg_model_data(model_dir = 'data/model/param_simulation_0115', overwrite=True):
     """
     Save aggregated data to each simulated folder
 
     :param main_dir:
     :return:
     """
-    orin_dir = np.sort(glob.glob(main_dir + '/*'))
+    orin_dir = np.sort(glob.glob(model_dir + '/*'))
 
     for d in orin_dir:
-        for model_name in [1, 2, 3]:
+        orig_files = np.sort(glob.glob('%s/*-sim-staydata.csv' % (d)))
+        # destination folder
+        dest_dir = '%s/%s' % (d, 'aggregate')
+        # overwrite dir
+        if overwrite:
+            shutil.rmtree(dest_dir)
+        if not os.path.exists(dest_dir):
+            os.mkdir(dest_dir)
+
+        for orig_file in orig_files:
             param_id = d.split('/')[-1]
-            orig_file = '%s/markov-model%s-sim-logdata.csv' % (d, model_name)
-            dfstay_aggregate, dftime_aggregate = calculate_agg_data(orig_file, param_id)
+            model_name = orig_file.split('-')[1][-1]
+            df_agg = calculate_agg_data(orig_file, param_id)
+            df_agg.columns = ['%s%s' % (a, '_%s' % b if b else '') for a, b in df_agg.columns]
+            df_agg.to_csv('%s/markov-model%s-agg.csv' % (dest_dir, model_name), header=True, index=False)
+            print('\tSAVING MODEL[%s] AGG FILE...ID[%s]' % (model_name, param_id))
 
-            # save data
-            dest_dir = '%s/%s' % (d, 'aggregate')
-            if not os.path.exists(dest_dir):
-                os.mkdir(dest_dir)
-            dfstay_aggregate.to_csv('%s/markov-model%s-agg-staydata.csv' % (dest_dir, model_name), header=True, index=False)
-            dftime_aggregate.to_csv('%s/markov-model%s-agg-rtdata.csv' % (dest_dir, model_name), header=True, index=False)
-            print('\tSAVING AGG FILE...')
-
-def save_agg_subject_data(main_dir = 'data/human/reformated_task_data'):
+def save_agg_subject_data(subject_dir = 'data/human/reformated_task_data', overwrite=True):
     """
     Save aggregated data to each subject folder
 
     :param main_dir:
     :return:
     """
-    orin_dir = np.sort(glob.glob(main_dir + '/[0-9]*'))
+    orin_dir = np.sort(glob.glob(subject_dir + '/[0-9]*'))
     for d in orin_dir:
+        # destination folder
+        dest_dir = '%s/%s' % (d, 'aggregate')
+        # overwrite dir
+        if overwrite:
+            shutil.rmtree(dest_dir)
+        if not os.path.exists(dest_dir):
+            os.mkdir(dest_dir)
         for data_name in ['Pre3', 'Test3']:
             subject_id = d.split('/')[-1]
             orig_file = '%s/%s.csv' % (d, data_name)
-            dfstay_aggregate, dftime_aggregate = calculate_agg_data(orig_file, subject_id)
-
-            # save data
-            dest_dir = '%s/%s' % (d, 'aggregate')
-            if not os.path.exists(dest_dir):
-                os.mkdir(dest_dir)
-            dfstay_aggregate.to_csv('%s/%s-agg-staydata.csv' % (dest_dir, data_name), header=True, index=False)
-            dftime_aggregate.to_csv('%s/%s-agg-rtdata.csv' % (dest_dir, data_name), header=True, index=False)
-            print('\tSAVING AGG FILE...')
+            df_agg = calculate_agg_data(orig_file, subject_id)
+            df_agg.columns = ['%s%s' % (a, '_%s' % b if b else '') for a, b in df_agg.columns]
+            df_agg.to_csv('%s/%s-agg.csv' % (dest_dir, data_name), header=True, index=False)
+            print('\tSAVING SUBJECT AGG FILE...ID[%s] [%s]' % (subject_id, data_name))
 
 # =================================================== #
 # CALCULATE MAX LOGLIKELIHOOD
 # =================================================== #
 
-def calculate_state1_stay_logprobz(subj_stay_agg, model_stay_agg, model_name):
-    df_merge = pd.merge(subj_stay_agg, model_stay_agg, on=['pre_received_reward', 'state_frequency'],
-                        suffixes=('.s', '.m'))
+# def calculate_state1_stay_logprobz(subj_stay_agg, model_stay_agg, model_name):
+#     """
+#     Calculate z-normed log probability for 4 P(stay) data points
+#     :param subj_stay_agg:
+#     :param model_stay_agg:
+#     :param model_name:
+#     :return:
+#     """
+#     df_merge = pd.merge(subj_stay_agg, model_stay_agg, on=['pre_received_reward', 'state_frequency'],
+#                         suffixes=('.s', '.m'))
+#
+#     # calculate the LL(m | subject)
+#     df_merge['condition'] = df_merge.apply(lambda x: '%s|%s' % (x['pre_received_reward'], x['state_frequency']), axis=1)
+#     df_merge['state1_stay_z'] = df_merge.apply(
+#         lambda x: (x['state1_stay_mean.m'] - x['state1_stay_mean.s']) / max(x['state1_stay_sd.s'], 1e-10), axis=1)
+#     df_merge['state1_stay_probz'] = df_merge.apply(lambda x: norm.pdf(x['state1_stay_z']), axis=1)
+#     df_merge['state1_stay_logprobz'] = df_merge.apply(lambda x: np.log(max(x['state1_stay_probz'], 1e-10)),
+#                                                       axis=1)  # max(x['state1_stay_probz']), 1e-10)
+#     df_merge['model_name'] = model_name
+#     return df_merge
+#
+#
+# def calculate_rt_logprobz(subj_rt_agg, model_rt_agg, model_name):
+#     """
+#     Calculate z-normed log probability for 8 RTs data points
+#     :param subj_rt_agg:
+#     :param model_rt_agg:
+#     :param model_name:
+#     :return:
+#     """
+#     df_merge = pd.merge(subj_rt_agg, model_rt_agg, on=['pre_received_reward', 'state_frequency', 'state_name'],
+#                         suffixes=('.s', '.m'))
+#
+#     # calculate the LL(m | subject)
+#     df_merge['condition'] = df_merge.apply(
+#         lambda x: '%s|%s|%s' % (x['pre_received_reward'], x['state_frequency'], x['state_name']), axis=1)
+#     df_merge['rt_z'] = df_merge.apply(
+#         lambda x: (x['reponse_time_mean.m'] - x['reponse_time_mean.s']) / max(x['reponse_time_sd.s'], 1e-10), axis=1)
+#     df_merge['rt_probz'] = df_merge.apply(lambda x: norm.pdf(x['rt_z']), axis=1)
+#     df_merge['rt_logprobz'] = df_merge.apply(lambda x: np.log(max(x['rt_probz'], 1e-10)),
+#                                              axis=1)  # max(x['state1_stay_probz']), 1e-10)
+#     df_merge['model_name'] = model_name
+#     return df_merge
+#
 
-    # calculate the LL(m | subject)
-    df_merge['condition'] = df_merge.apply(lambda x: '%s|%s' % (x['pre_received_reward'], x['state_frequency']), axis=1)
+# def calculate_LL(subject_agg, model_agg, model_name):
+#     df_merge = pd.merge(subject_agg, model_agg, on=['pre_received_reward', 'state_frequency'], suffixes=('.s', '.m'))
+#     # state1stay
+#     df_merge[('state1_stay.s', 'z')] = df_merge.apply(
+#         lambda x: (x[('state1_stay.s', 'mean')] - x[('state1_stay.m', 'mean')]) / max(x[('state1_stay.s', 'std')],                                                                                  1e-10), axis=1)
+#     df_merge[('state1_stay.s', 'probz')] = df_merge.apply(lambda x: norm.pdf(x[('state1_stay.s', 'z')]), axis=1)
+#     df_merge[('state1_stay.s', 'logprobz')] = df_merge.apply(
+#         lambda x: np.log(max(x[('state1_stay.s', 'probz')], 1e-10)), axis=1)
+#
+#     # state1_response_time
+#     df_merge[('state1_response_time.s', 'z')] = df_merge.apply(
+#         lambda x: (x[('state1_response_time.s', 'mean')] - x[('state1_response_time.m', 'mean')]) / max(
+#             x[('state1_response_time.s', 'std')], 1e-10), axis=1)
+#     df_merge[('state1_response_time.s', 'probz')] = df_merge.apply(
+#         lambda x: norm.pdf(x[('state1_response_time.s', 'z')]), axis=1)
+#     df_merge[('state1_response_time.s', 'logprobz')] = df_merge.apply(
+#         lambda x: np.log(max(x[('state1_response_time.s', 'probz')], 1e-10)), axis=1)
+#
+#     # state2_response_time
+#     df_merge[('state2_response_time.s', 'z')] = df_merge.apply(
+#         lambda x: (x[('state2_response_time.s', 'mean')] - x[('state2_response_time.m', 'mean')]) / max(
+#             x[('state2_response_time.s', 'std')], 1e-10), axis=1)
+#     df_merge[('state2_response_time.s', 'probz')] = df_merge.apply(
+#         lambda x: norm.pdf(x[('state2_response_time.s', 'z')]), axis=1)
+#     df_merge[('state2_response_time.s', 'logprobz')] = df_merge.apply(
+#         lambda x: np.log(max(x[('state2_response_time.s', 'probz')], 1e-10)), axis=1)
+#
+#     # calculate sum of logprobz across 12 data points = loglikelihood
+#     df_merge['LL'] = df_merge[[(a, b) for (a, b) in df_merge.columns if b == 'logprobz']].sum().sum()
+#     df_merge['model_name'] = model_name
+#     return df_merge
+def calculate_LL(subject_agg, model_agg, model_name):
+    df_merge = pd.merge(subject_agg, model_agg, on=['pre_received_reward', 'state_frequency'], suffixes=('.s', '.m'))
+    # state1stay
     df_merge['state1_stay_z'] = df_merge.apply(
-        lambda x: (x['state1_stay_mean.m'] - x['state1_stay_mean.s']) / max(x['state1_stay_sd.s'], 1e-10), axis=1)
+        lambda x: (x['state1_stay_mean.s'] - x['state1_stay_mean.m']) / max(x['state1_stay_mean.s'], 1e-10), axis=1)
     df_merge['state1_stay_probz'] = df_merge.apply(lambda x: norm.pdf(x['state1_stay_z']), axis=1)
-    df_merge['state1_stay_logprobz'] = df_merge.apply(lambda x: np.log(max(x['state1_stay_probz'], 1e-10)),
-                                                      axis=1)  # max(x['state1_stay_probz']), 1e-10)
+    df_merge['state1_stay_logprobz'] = df_merge.apply(lambda x: np.log(max(x['state1_stay_probz'], 1e-10)), axis=1)
+
+    # rt1
+    df_merge['rt1_z'] = df_merge.apply(lambda x: (x['state1_response_time_mean.s'] - x['state1_response_time_mean.m']) / max(x['state1_response_time_mean.s'], 1e-10), axis=1)
+    df_merge['rt1_probz'] = df_merge.apply(lambda x: norm.pdf(x['rt1_z']), axis=1)
+    df_merge['rt1_logprobz'] = df_merge.apply(lambda x: np.log(max(x['rt1_probz'], 1e-10)), axis=1)
+
+    # rt2
+    df_merge['rt2_z'] = df_merge.apply(
+        lambda x: (x['state2_response_time_mean.s'] - x['state2_response_time_mean.m']) / max(
+            x['state2_response_time_mean.s'], 1e-10), axis=1)
+    df_merge['rt2_probz'] = df_merge.apply(lambda x: norm.pdf(x['rt2_z']), axis=1)
+    df_merge['rt2_logprobz'] = df_merge.apply(lambda x: np.log(max(x['rt2_probz'], 1e-10)), axis=1)
+
+    # calculate log-likelihood
+    df_merge['LL'] = df_merge[[c for c in df_merge.columns if '_logprobz' in c]].sum().sum()
     df_merge['model_name'] = model_name
     return df_merge
-
-
-def calculate_rt_logprobz(subj_rt_agg, model_rt_agg, model_name):
-    df_merge = pd.merge(subj_rt_agg, model_rt_agg, on=['pre_received_reward', 'state_frequency', 'state_name'],
-                        suffixes=('.s', '.m'))
-
-    # calculate the LL(m | subject)
-    df_merge['condition'] = df_merge.apply(
-        lambda x: '%s|%s|%s' % (x['pre_received_reward'], x['state_frequency'], x['state_name']), axis=1)
-    df_merge['rt_z'] = df_merge.apply(
-        lambda x: (x['reponse_time_mean.m'] - x['reponse_time_mean.s']) / max(x['reponse_time_sd.s'], 1e-10), axis=1)
-    df_merge['rt_probz'] = df_merge.apply(lambda x: norm.pdf(x['rt_z']), axis=1)
-    df_merge['rt_logprobz'] = df_merge.apply(lambda x: np.log(max(x['rt_probz'], 1e-10)),
-                                             axis=1)  # max(x['state1_stay_probz']), 1e-10)
-    df_merge['model_name'] = model_name
-    return df_merge
-
-
-def param_id2value(data_dir='data/model/param_simulation_0115', param_id='param_task0_actr0', return_dict=True):
+def param_id2value(model_dir='data/model/param_simulation_0115', param_id='param_task0_actr0', return_dict=True):
     """
     fetch parameter values from data dir
     """
     assert (os.getcwd().split('/')[-1] == 'ACTR-MarkovTask')
-    _, task_id, actr_id = param_id.split('_')
+    try:
+        _, task_id, actr_id = param_id.split('_')
 
-    log_file = glob.glob('%s/param_%s_%s/log.csv' % (data_dir, task_id, actr_id))[0]
-    log_param_dict = pd.read_csv(log_file, header=0, index_col=0).drop(columns=['file_path']).drop_duplicates().to_dict(
-        orient='records')[0]
-    task_keys = ['M', 'RANDOM_WALK', 'REWARD']
-    actr_keys = ['seed', 'ans', 'egs', 'alpha', 'lf', 'bll', 'mas']
+        log_file = glob.glob('%s/param_%s_%s/log.csv' % (model_dir, task_id, actr_id))[0]
+        log_param_dict = pd.read_csv(log_file, header=0, index_col=0).drop(columns=['file_path']).drop_duplicates().to_dict(
+            orient='records')[0]
+        task_keys = ['M', 'RANDOM_WALK', 'REWARD']
+        actr_keys = ['seed', 'ans', 'egs', 'alpha', 'lf', 'bll', 'mas']
 
-    task_dict = {key: log_param_dict[key] for key in task_keys}
-    actr_dict = {key: log_param_dict[key] for key in actr_keys}
+        task_dict = {key: log_param_dict[key] for key in task_keys}
+        actr_dict = {key: log_param_dict[key] for key in actr_keys}
 
-    if return_dict:
-        return task_dict, actr_dict
-    else:
-        # m, random_walk, r, seed, ans, egs, alpha, lf, bll, mas
-        m, random_walk, r = task_dict.values()
-        seed, ans, egs, alpha, lf, bll, mas = actr_dict.values()
-        return m, random_walk, r, seed, ans, egs, alpha, lf, bll, mas
+        if return_dict:
+            return task_dict, actr_dict
+        else:
+            # m, random_walk, r, seed, ans, egs, alpha, lf, bll, mas
+            m, random_walk, r = task_dict.values()
+            seed, ans, egs, alpha, lf, bll, mas = actr_dict.values()
+            return m, random_walk, r, seed, ans, egs, alpha, lf, bll, mas
+    except:
+        return None
 
 
-def calculate_maxLL(df1, df2, data_dir='data/model/param_simulation_0115'):
-    assert ('state1_stay_z' in df1.columns and 'rt_z' in df2.columns)
-    # save LL
-    df1_rename = df1.rename(
-        columns={'state1_stay_z': 'z', 'state1_stay_probz': 'probz', 'state1_stay_logprobz': 'logprobz'})
-    df2_rename = df2.rename(columns={'rt_z': 'z', 'rt_probz': 'probz', 'rt_logprobz': 'logprobz'})
+# def calculate_maxLL(df1, df2, data_dir='data/model/param_simulation_0115'):
+#     """
+#     Calculate maxLL for each subject, each model
+#     12 datapoints are used: 4 P(stay) and 8 RTs
+#     :param df1:
+#     :param df2:
+#     :param data_dir:
+#     :return:
+#     """
+#     assert ('state1_stay_z' in df1.columns and 'rt_z' in df2.columns)
+#     # save LL
+#     df1_rename = df1.rename(
+#         columns={'state1_stay_z': 'z', 'state1_stay_probz': 'probz', 'state1_stay_logprobz': 'logprobz'})
+#     df2_rename = df2.rename(columns={'rt_z': 'z', 'rt_probz': 'probz', 'rt_logprobz': 'logprobz'})
+#
+#     df_merged = pd.concat([df1_rename, df2_rename], axis=0, ignore_index=True).groupby(
+#         ['id.s', 'id.m', 'model_name']).agg(LL=('logprobz', 'sum')).reset_index()
+#     df_temp1 = df_merged.groupby(['id.s', 'model_name']).agg(maxLL=('LL', 'max')).reset_index()
+#     df_temp2 = pd.merge(df_merged, df_temp1, how='left')
+#     df_temp2['is_max_param_id'] = df_temp2.apply(lambda x: x['LL'] == x['maxLL'], axis=1)
+#     # df_temp2['max_param_values'] = df_temp2.apply(lambda x: [param_id2value(data_dir=data_dir, param_id=param_id) for param_id in x], axis=1)
+#     df_temp2['param_value.m'] = df_temp2['id.m'].apply(lambda x: param_id2value(data_dir=data_dir, param_id=str(x)))
+#     df_temp3 = df_temp2[df_temp2['is_max_param_id']].groupby(['id.s', 'model_name'])['id.m'].apply(list).reset_index(
+#         name='max_param_ids')
+#     res = pd.merge(df_temp2, df_temp3)
+#     return res
 
-    df_merged = pd.concat([df1_rename, df2_rename], axis=0, ignore_index=True).groupby(
-        ['id.s', 'id.m', 'model_name']).agg(LL=('logprobz', 'sum')).reset_index()
-    df_temp1 = df_merged.groupby(['id.s', 'model_name']).agg(maxLL=('LL', 'max')).reset_index()
-    df_temp2 = pd.merge(df_merged, df_temp1, how='left')
+def calculate_maxLL(dfLL_merged, model_dir='data/model/param_simulation_0115'):
+    assert ('LL' in dfLL_merged.columns)
+    df_temp1 = dfLL_merged.groupby(['id.s', 'model_name']).agg(maxLL=('LL', 'max')).reset_index()
+    df_temp2 = pd.merge(dfLL_merged, df_temp1, how='left')
     df_temp2['is_max_param_id'] = df_temp2.apply(lambda x: x['LL'] == x['maxLL'], axis=1)
-    # df_temp2['max_param_values'] = df_temp2.apply(lambda x: [param_id2value(data_dir=data_dir, param_id=param_id) for param_id in x], axis=1)
-    df_temp2['param_value.m'] = df_temp2['id.m'].apply(lambda x: param_id2value(data_dir=data_dir, param_id=str(x)))
-    df_temp3 = df_temp2[df_temp2['is_max_param_id']].groupby(['id.s', 'model_name'])['id.m'].apply(list).reset_index(
-        name='max_param_ids')
-    res = pd.merge(df_temp2, df_temp3)
-    return res
+    df_temp2['param_value.m'] = df_temp2.apply(lambda x: param_id2value(model_dir=model_dir, param_id=str(x['id.m'])), axis=1)
+    df_temp3 = df_temp2[df_temp2['is_max_param_id']].groupby(['id.s', 'model_name'])['id.m'].apply(list).reset_index(name='max_param_ids')
+    df_maxLL = pd.merge(df_temp2, df_temp3)
+    return df_maxLL
 
-def save_max_loglikelihood_data(model_dir='data/model/param_simulation_0115',
-                                subject_dir='data/human/reformated_task_data'):
+
+
+def save_max_loglikelihood_data(model_dir='data/model/param_simulation_0123',
+                                subject_dir='data/human/reformated_task_data',
+                                special_suffix='12dp', overwrite=False):
+    """
+
+    :param model_dir:
+    :param subject_dir:
+    :param special_suffix:
+    :param overwrite:
+    :return:
+    """
+
     subject_ids = np.sort([i.split('/')[-1] for i in glob.glob('%s/[0-9]*' % (subject_dir))])
+    models = np.sort([i.split('/')[-1] for i in glob.glob('%s/param_task0_actr0/aggregate/markov-model[0-9]-agg.csv' % (model_dir))])
+    subj_data_types = np.sort([i.split('/')[-1] for i in glob.glob('%s/28326/aggregate/*-agg.csv' % (subject_dir))])
     param_ids = np.sort([i.split('/')[-1] for i in glob.glob('%s/param*' % (model_dir))])
 
+    simulation_id = model_dir.split('/')[-1]
+
     for subject_id in subject_ids:
-
-        for model_name in ['markov-model1', 'markov-model2', 'markov-model3']:
-            # Pre vs. Test
-            for subj_data_type in ['Test3', 'Pre3']:
+        for model_file in models:
+            for subj_data_file in subj_data_types:
                 # each subject
-                dfstay_list = []
-                dfrt_list = []
+                subject_agg_file = os.path.join(subject_dir, subject_id, 'aggregate', subj_data_file)
+                subject_agg = pd.read_csv(subject_agg_file)
+
+                dfLL_list = []
                 for param_id in param_ids:
-                    # each param id
-                    subject_stay_path = '%s/%s/aggregate/%s-agg-staydata.csv' % (
-                    subject_dir, subject_id, subj_data_type)
-                    subject_rt_path = '%s/%s/aggregate/%s-agg-rtdata.csv' % (subject_dir, subject_id, subj_data_type)
+                    # print(subject_id, model_file, subj_data_type, param_id)
+                    dest_dir = os.path.join(subject_dir, subject_id, 'maxLL_' + simulation_id)
+                    model_agg_file = os.path.join(model_dir, param_id, 'aggregate', model_file)
 
-                    model_stay_path = '%s/%s/aggregate/%s-agg-staydata.csv' % (model_dir, param_id, model_name)
-                    model_rt_path = '%s/%s/aggregate/%s-agg-rtdata.csv' % (model_dir, param_id, model_name)
+                    if not os.path.exists(dest_dir):
+                        os.mkdir(dest_dir)
 
-                    # print(subject_stay_path, '\t', model_stay_path)
-                    subj_stay_agg = pd.read_csv(subject_stay_path)
-                    model_stay_agg = pd.read_csv(model_stay_path)
+                    model_name = model_file.split('-')[1]
+                    model_agg = pd.read_csv(model_agg_file)
+                    dfLL = calculate_LL(subject_agg, model_agg, model_name)
+                    dfLL_list.append(dfLL)
 
-                    subj_rt_agg = pd.read_csv(subject_rt_path)
-                    model_rt_agg = pd.read_csv(model_rt_path)
+                # save per subject per model
+                dfLL_merged = pd.concat(dfLL_list)
+                dfmaxLL = calculate_maxLL(dfLL_merged, model_dir=model_dir)
 
-                    dfstay_merged = calculate_state1_stay_logprobz(subj_stay_agg=subj_stay_agg, model_stay_agg=model_stay_agg, model_name=model_name)[['condition', 'id.s', 'id.m', 'model_name', 'state1_stay_z', 'state1_stay_probz',
-                          'state1_stay_logprobz']]
+                # incase if need special suffix
+                subj_data_type = str.lower(subj_data_file.split('-')[0])
+                dest_file_name = '%s/%s-%s-%sll-maxLL.csv' % (dest_dir, subj_data_type, model_name, special_suffix)
 
-                    dfrt_merged = calculate_rt_logprobz(subj_rt_agg=subj_rt_agg, model_rt_agg=model_rt_agg, model_name=model_name)[['condition', 'id.s', 'id.m', 'model_name', 'rt_z', 'rt_probz', 'rt_logprobz']]
-
-                    dfstay_list.append(dfstay_merged)
-                    dfrt_list.append(dfrt_merged)
-
-                df1 = pd.concat(dfstay_list, axis=0, ignore_index=True)
-                df2 = pd.concat(dfrt_list, axis=0, ignore_index=True)
-                dfmaxLL = calculate_maxLL(df1, df2, data_dir=model_dir)
-
-                # save
-                dest_dir = '%s/%s/loglikelihood-%s' % (subject_dir, subject_id, model_dir.split('/')[-1].split('_')[-1])
-                dest_file_name1 = '%s/%s-%s-ll-staydata.csv' % (dest_dir, model_name, str.lower(subj_data_type))
-                dest_file_name2 = '%s/%s-%s-ll-rtdata.csv' % (dest_dir, model_name, str.lower(subj_data_type))
-                dest_file_name3 = '%s/%s-%s-ll-maxLL.csv' % (dest_dir, model_name, str.lower(subj_data_type))
-
-                if not os.path.exists(dest_dir):
-                    os.mkdir(dest_dir)
-
-                df1.to_csv(dest_file_name1, header=True, index=True)
-                df2.to_csv(dest_file_name2, header=True, index=True)
-                dfmaxLL.to_csv(dest_file_name3, header=True, index=True)
-                print('SVING maxLL FILES...SUB-[%s]' % (subject_id))
-
-
-
+                # save file
+                if overwrite:
+                    dfmaxLL.to_csv(dest_file_name, header=True, index=True)
+                    print('SVING maxLL FILES...SUB-[%s] [%s] \tMODEL [%s]' % (subject_id, subj_data_type, model_name))
+                else:
+                    if not os.path.exists(dest_file_name):
+                        dfmaxLL.to_csv(dest_file_name, header=True, index=True)
+                        print('SVING maxLL FILES...SUB-[%s] [%s] \tMODEL [%s]' % (subject_id, subj_data_type, model_name))
+                    else:
+                        print('SKIPPING...SUB-[%s]' % (subject_id))
