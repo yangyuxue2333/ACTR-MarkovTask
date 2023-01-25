@@ -270,10 +270,21 @@
    
    =visual>
    
-   =imaginal> 
+   ;=imaginal>
+   ;  curr-state =STATE
+   ;  left-stimulus  =L
+   ;  right-stimulus =R
+
+   +imaginal>
+     isa wm
+     status process
      curr-state =STATE
      left-stimulus  =L
      right-stimulus =R
+     response nil
+     next-state nil
+     reward nil
+
    
    !output! (in attend-state1 =STATE =L =R)
     

@@ -457,6 +457,7 @@ class MarkovACTR(MarkovState):
         actr.add_command("markov-update-end", self.update_end, "Update window: done")
 
         actr.add_command("markov-update-reward-probability", self.update_random_walk_reward_probabilities, "Update reward probability: before state0")
+        actr.add_command("detect-production-hook", self.cycle_hook_func, "define cycle_hook_func func")
 
     def remove_actr_commands(self):
         actr.remove_command("markov-update-state0")
@@ -467,13 +468,17 @@ class MarkovACTR(MarkovState):
         actr.remove_command("markov-update-end")
 
         actr.remove_command("markov-update-reward-probability")
+        actr.remove_command("detect-production-hook")
 
     def respond_to_key_press(self, model, key):
         self.response = key
         actr.clear_exp_window()
-        self.offset = actr.mp_time()
-
+        # self.offset = actr.mp_time()
+        # print('test offset', self.offset)
+        # print('test rt', self.response_time)
         # print('previous state', self.markov_state.state,
+        #       'self.onset', self.onset,
+        #        'self.offset', self.offset,
         #      'response', key,
         #      'rt: ', self.response_time)
 
@@ -498,6 +503,7 @@ class MarkovACTR(MarkovState):
             self.markov_state.state1(self.response)
             self.markov_state.state1_response_time = self.response_time
             actr.schedule_event_relative(.01, "markov-update-state2")
+
         else:
             self.markov_state.state2(self.response)
             self.markov_state.state2_response_time = self.response_time
@@ -505,6 +511,7 @@ class MarkovACTR(MarkovState):
             # continue deliver rewards, no need to wait for response
             self.markov_state.reward()
             actr.schedule_event_relative(.01, "markov-update-state3")
+
 
         # log
         if self.markov_state.state == 3:
@@ -539,7 +546,8 @@ class MarkovACTR(MarkovState):
              'left-stimulus', 'A1',
              'right-stimulus', 'A2',
              'screen-x', 200, 'screen-y', 100])
-        self.onset = actr.mp_time()
+        # print('test onset: update_state1()', self.onset)
+        # self.onset = actr.mp_time()
 
     def update_state2(self):
         # print('test: update_state2()',
@@ -555,7 +563,8 @@ class MarkovACTR(MarkovState):
              'left-stimulus', self.markov_state.state2_stimuli[0].text,
              'right-stimulus', self.markov_state.state2_stimuli[1].text,
              'screen-x', 200, 'screen-y', 100])
-        self.onset = actr.mp_time()
+        # print('test onset update_state2()', self.onset)
+        # self.onset = actr.mp_time()
 
     def update_state3(self):
         # print('test: update_state3()',
@@ -567,6 +576,9 @@ class MarkovACTR(MarkovState):
              'stage', 3,
              'reward', self.markov_state.received_reward,
              'screen-x', 200, 'screen-y', 100])
+
+        # print('test onset: update_state3()', self.onset)
+        # self.onset = actr.mp_time()
 
     def update_end(self):
         actr.clear_exp_window()
@@ -605,6 +617,20 @@ class MarkovACTR(MarkovState):
             self.markov_state.reward_probability_random_walk = self.markov_state.reward_probability_fixed.copy()
         # print('test after reward_probability_random_walk', self.markov_state.reward_probability_random_walk)
 
+    def cycle_hook_func(self, *params):
+        """
+        This function setup actr onset time when ATTEND-STATE1 fires
+        :param params: **params are production names
+        :return:
+        """
+        production_name = params[0]
+        if production_name.startswith('ATTEND'):
+            self.onset = actr.mp_time()
+            # print('\tonset', self.onset)
+        if production_name.startswith('CHOOSE-STATE'):
+            self.offset = actr.mp_time()
+            # print('\toffset', self.offset)
+        # print(actr.mp_time(), *params)
 
     def run_experiment(self, n=2):
         """

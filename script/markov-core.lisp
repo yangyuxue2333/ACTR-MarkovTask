@@ -108,7 +108,7 @@
          ;:pct t
          ;:blt t
          ;:reward-hook "detect-reward-hook"
-         ;:cycle-hook "detect-production-hook"
+         :cycle-hook "detect-production-hook"
 
     )
 )
