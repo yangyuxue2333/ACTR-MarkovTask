@@ -927,8 +927,8 @@
    !bind! =DIFF (- =MOT =DURATION)
 
    =goal>
-    step  refresh-memory
-    updated-motivation   =DIFF 
+    step  refresh-success
+    updated-motivation   =DIFF
    
    =imaginal>
    
@@ -951,8 +951,9 @@
      buffer full
    
    =goal>
-     step  refresh-memory
-     > updated-motivation 0
+     ; one-time refresh
+     step  refresh-success
+     > updated-motivation 0 
    
 ==> 
    
@@ -970,8 +971,8 @@
      buffer full
    
    =goal>
-     step  refresh-memory
-     < updated-motivation 0   
+     step  refresh-memory 
+     <= updated-motivation 0   
    
 ==> 
    
@@ -1027,7 +1028,7 @@
    =visual>
    
    =goal>
-     step       encode-stimulus 
+     step      encode-stimulus 
 
    !output! (in choose-planed-state1 =RESP)  
 )
@@ -1074,7 +1075,6 @@
 
    !output! (in choose-planed-state1 =RESP)  
 )
-
 
 (p choose-state2-left
    "At STATE2: Choose LEFT stimulus"
@@ -1161,13 +1161,46 @@
    =visual>
    
    =goal>
-     step       encode-stimulus 
+     step      encode-stimulus 
    
    =imaginal>
       response right
    
    !output! (in choose-state2-plan-right())
   
+)
+
+(p complete-motor-response2
+
+    ?manual>
+     preparation free
+     processor free
+     execution free
+   
+   =visual>
+     kind markov-stimulus
+     stage 2
+        
+   =goal>
+     isa        phase
+     step       complete-motor-response2
+
+   =imaginal>
+     status process 
+     - curr-state nil
+     - left-stimulus nil
+     - right-stimulus nil
+     - response nil
+     next-state nil
+     reward nil
+==>
+    =visual>
+   
+    =goal>
+     step       encode-stimulus 
+
+    =imaginal> 
+
 )
 
 ;;; ----------------------------------------------------------------

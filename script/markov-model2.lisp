@@ -713,7 +713,8 @@
 ==>
    
    =goal>
-    step  refresh-memory  ; infinite refresh
+    ; step  refresh-memory  ; infinite refresh
+    step  refresh-success  ; one-time refresh
    
    =imaginal>
    
@@ -740,7 +741,7 @@
      ; buffer full
 
    =goal>
-     step  refresh-memory
+     step  refresh-success
    
 ==> 
    

@@ -19,13 +19,6 @@ import actr
 import random
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import pprint as p
-import json
-import time
-from datetime import datetime
-from functools import reduce
-import scipy.optimize as opt
 import itertools
 from pandas import CategoricalDtype
 
@@ -473,8 +466,8 @@ class MarkovACTR(MarkovState):
     def respond_to_key_press(self, model, key):
         self.response = key
         actr.clear_exp_window()
-        # self.offset = actr.mp_time()
-        # print('test offset', self.offset)
+        self.offset = actr.mp_time()
+        # print('\toffset', self.offset)
         # print('test rt', self.response_time)
         # print('previous state', self.markov_state.state,
         #       'self.onset', self.onset,
@@ -627,9 +620,9 @@ class MarkovACTR(MarkovState):
         if production_name.startswith('ATTEND'):
             self.onset = actr.mp_time()
             # print('\tonset', self.onset)
-        if production_name.startswith('CHOOSE-STATE'):
-            self.offset = actr.mp_time()
-            # print('\toffset', self.offset)
+        # if production_name.startswith('ENCODE-STATE'):
+        #     self.offset = actr.mp_time()
+        #     print('\toffset', self.offset)
         # print(actr.mp_time(), *params)
 
     def run_experiment(self, n=2):

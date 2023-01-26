@@ -1,13 +1,5 @@
 import shutil
-
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pandas import CategoricalDtype
-from plotnine import *
-from plotnine.data import *
-from pathlib import Path
-from tqdm import tqdm
-import pandas.api.types as pdtypes
 from markov_device import *
 from datetime import date
 import time
@@ -32,7 +24,7 @@ def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, th
         print('>>> Failed to converge <<<')
         return
     m = MarkovACTR(setup=False)
-    m.setup(model=model, verbose=verbose, task_params=task_params, actr_params=actr_params)
+    m.setup(model=model, actr_params=actr_params, task_params=task_params, reload=True, verbose=verbose)
     m.run_experiment(n)
     df = m.df_postprocess_behaviors()
 
