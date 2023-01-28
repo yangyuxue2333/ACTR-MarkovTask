@@ -1,3 +1,4 @@
+import os
 import shutil
 from pandas import CategoricalDtype
 from markov_device import *
@@ -14,7 +15,7 @@ convergence = 100
 # =================================================== #
 # SIMULATE
 # =================================================== #
-def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=.6, verbose=False):
+def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=0, verbose=False):
     """
     simulate markov model
     thresh determines whether the model learns optimal action sequence
@@ -136,7 +137,7 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
     start_time = time.time()
     # for i in tqdm(range(epoch)):
     for i in range(epoch):
-        m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=0)
+        m = simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=0, verbose=verbose)
         if (i==0 and verbose): print(m)
 
         # stay probability
@@ -156,9 +157,9 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
         if log:
             df_beh, df_state1stay, df_utrace, df_atrace = beh, state1stay, utrace, atrace
             file_path = log_simulation(beh, dir_path=log, file_name=model+'-sim-logdata')
-            log_simulation(state1stay, dir_path=log, file_name=model+'-sim-staydata')
-            log_simulation(utrace, dir_path=log, file_name=model+'-actr-udata')
-            log_simulation(atrace, dir_path=log, file_name=model+'-actr-adata')
+            log_simulation(state1stay, dir_path=log, file_name=model+'-sim-staydata', verbose=verbose)
+            log_simulation(utrace, dir_path=log, file_name=model+'-actr-udata', verbose=verbose)
+            log_simulation(atrace, dir_path=log, file_name=model+'-actr-adata',verbose=verbose)
             
         else:
             beh_list.append(beh)
@@ -176,7 +177,8 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
 
         
     if log:
-        log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params, file_path=file_path)
+        log_params(dir_path=log, epoch=epoch, n=n, actr_params=actr_params, task_params=task_params,
+                   file_path=file_path,verbose=verbose)
         return df_beh, df_state1stay, df_utrace, df_atrace
     else:
         # merge df list
@@ -207,8 +209,13 @@ def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=
 # RECORD SIMULATED DATA
 # =================================================== #
 
-def log_simulation(df, dir_path='', file_name='', verbose=False):
-    data_dir_path = '../data/'+dir_path
+def log_simulation(df, dir_path, file_name, verbose=False):
+    """
+    parent_dir = '..xx/ACTR-MarkovTask'
+    dir_path = 'data/model/param_simulation_xx'
+    """
+    parent_dir = os.path.dirname(os.getcwd())
+    data_dir_path = os.path.join(parent_dir, dir_path)
     if not os.path.exists(data_dir_path): 
         os.makedirs(data_dir_path)
     today = date.today().strftime('-%m%d%y') #.strftime('-%m-%d-%Y')
@@ -220,25 +227,31 @@ def log_simulation(df, dir_path='', file_name='', verbose=False):
         mode='a' 
         header = False
     df.to_csv(file_path, mode=mode, header=header)
-    if verbose: print('>> saved..', file_name)
+    if verbose: print('...START LOG SIMULATION OUTPUTS.../n/t', file_name)
     return file_path
 
 def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=False):
+    """
+    parent_dir = '..xx/ACTR-MarkovTask'
+    dir_path = 'data/model/param_simulation_xx'
+    """
+    parent_dir = os.path.dirname(os.getcwd())
+    log_path = os.path.join(parent_dir, dir_path, 'log.csv')
+
     param_dict={'epoch':epoch, 'n':n, **actr_params, **task_params,
                 'model_name':file_path.split('/')[-1].split('-')[1][-1],
                 'param_id':file_path.split('/')[-2],
                 'file_path':file_path,}
     df = pd.DataFrame(param_dict.values(), index=param_dict.keys()).T
-    
-    data_dir_path = '../data/'+dir_path
-    log_path =  data_dir_path+'log.csv'
     mode='w'
     header=True
+
     if os.path.exists(log_path):
         mode='a' 
         header=False
+
     df.to_csv(log_path, mode=mode, header=header, index=True)
-    if verbose: print('>> saved..', log_path)
+    if verbose: print('...START LOG SIMULATION PARAMETERS.../n/t..', log_path)
     
 
 # =================================================== #
@@ -248,13 +261,15 @@ def log_params(dir_path, epoch, n, actr_params, task_params, file_path, verbose=
 def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', model_name='markov-model1', index_thres=None, verbose=True, load_agg=False):
     """
     Load simulated data for a single parameter set
-    :param data_path:
+    :param data_path: 'data/model/param_simulation_xx/param_task0_actr0'
     :param model_name: require full name of model e
     :param index_thres: 
     :param verbose:
     :return:
+    parent_dir = '..xx/ACTR-MarkovTask'
     """
-    assert (os.getcwd().split("/")[-1] == 'ACTR-MarkovTask')
+    parent_dir = os.path.dirname(os.getcwd())
+    data_path = os.path.join(parent_dir, data_path)
 
     df1_utrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-udata.csv'))
     df1_utrace[':utility'] = df1_utrace[':utility'].apply(pd.to_numeric, errors='coerce')
@@ -262,9 +277,7 @@ def load_simulation(data_path='data/param_simulation_1114/param_task0_actr0', mo
     df1_atrace = pd.read_csv(os.path.join(data_path, model_name + '-actr-adata.csv'))
     df1_atrace[':Reference-Count'] = df1_atrace[':Reference-Count'].apply(pd.to_numeric, errors='coerce')
     df1_atrace[':Activation'] = df1_atrace[':Activation'].apply(pd.to_numeric, errors='coerce')
-    df1_atrace[':Last-Retrieval-Activation'] = df1_atrace[':Last-Retrieval-Activation'].apply(pd.to_numeric,
-                                                                                              errors='coerce')
-
+    df1_atrace[':Last-Retrieval-Activation'] = df1_atrace[':Last-Retrieval-Activation'].apply(pd.to_numeric, errors='coerce')
     param_log = pd.read_csv(os.path.join(data_path, 'log.csv')).loc[0]
 
     if verbose:
@@ -322,9 +335,9 @@ def simple_check_exist(log_dir, param_folder_id, target_num_files):
     :param param_folder_id:
     :return:
     """
-    fs = glob.glob('../'+log_dir + param_folder_id + '/*.csv')
-    print(fs)
-    if len(fs) == target_num_files and 'log.csv' in fs:
+    parent_dir = os.path.dirname(os.getcwd())
+    fs = glob.glob(os.path.join(parent_dir, log_dir, param_folder_id) + '/*.csv')
+    if len(fs) == target_num_files:
         return True
     else:
         return False
@@ -437,11 +450,15 @@ def temporary_update_stay_probability(df):
         return dff
     return dff
 
-def process_subject_data(data_dir='./data/human/task_data', log=None):
+def process_subject_data(data_dir='data/human/task_data', log=None):
     assert (os.getcwd().split('/')[-1] == 'ACTR-MarkovTask')
     """
     Load and reformat emperical data (Teddy)
+    parent_dir = '..xx/ACTR-MarkovTask'
+    data_dir = 'data/human/task_data'
     """
+    parent_dir = os.path.dirname(os.getcwd())
+    data_dir = os.path.join(parent_dir, data_dir)
     df_list = []
     for f in np.sort(glob.glob(data_dir + '/%s' % ('*.txt'))):
         df = pd.read_csv(f, header=None)

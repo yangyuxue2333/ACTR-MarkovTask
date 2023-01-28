@@ -923,18 +923,17 @@ class MarkovACTR(MarkovState):
         # log curr reward probability
         # if random walk is enabled, curr_reward_probability_dict is reward_probability_random_walk
         # otherwise, curr_reward_probability_dict is reward_probability_fixed
-        df_wide = pd.DataFrame([{'state2_selected_stimulus': s.state2_selected_stimulus,
+
+        df = pd.DataFrame([{'state2_selected_stimulus': s.state2_selected_stimulus,
                                  'received_reward': s.received_reward,
                                  **s.curr_reward_probability_dict} for s in self.log]).reset_index()
-
-        df_long = df_wide.melt(id_vars=['index', 'state2_selected_stimulus', 'received_reward'],
-                           var_name='state2_stimulus', value_name='reward_probability').sort_values(by='index')
-        if format == 'long':
-            res = df_long
+        if format == 'wide':
+            return df
         else:
-            res = df_wide
-
-        return res
+            df = df.melt(id_vars=['index', 'state2_selected_stimulus', 'received_reward'],
+                          var_name='state2_stimulus', value_name='reward_probability')
+            df = df.sort_values(by='index')
+            return df
 
     def df_optimal_behaviors(self, num_bin=4):
         """
