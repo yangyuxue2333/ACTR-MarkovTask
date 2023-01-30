@@ -153,6 +153,11 @@ class MarkovState():
         self.state2_response = None
         self.state1_response_time = 0.0
         self.state2_response_time = 0.0
+        # self.state1_onset = 0.0
+        # self.state1_offset = 0.0
+        # self.state2_onset = 0.0
+        # self.state2_offset = 0.0
+
         self.state1_selected_stimulus = None
         self.state2_selected_stimulus = None
         self.received_reward = 0
@@ -166,25 +171,41 @@ class MarkovState():
         self.actr_production_trace = None
         self.state0()
 
+    # @property
+    # def state1_response_time(self):
+    #     return self._state1_response_time
+    #
+    # @property
+    # def state2_response_time(self):
+    #     return self._state2_response_time
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, val):
+        self._state = val
+
     @property
     def state1_response_time(self):
         return self._state1_response_time
-
-    @property
-    def state2_response_time(self):
-        return self._state2_response_time
-
-    @property
-    def reward_probability_random_walk(self):
-        return self._reward_probability_random_walk
 
     @state1_response_time.setter
     def state1_response_time(self, val):
         self._state1_response_time = val
 
+    @property
+    def state2_response_time(self):
+        return self._state2_response_time
+
     @state2_response_time.setter
     def state2_response_time(self, val):
         self._state2_response_time = val
+
+    @property
+    def reward_probability_random_walk(self):
+        return self._reward_probability_random_walk
 
     @reward_probability_random_walk.setter
     def reward_probability_random_walk(self, val):
@@ -360,8 +381,8 @@ class MarkovState():
     def __repr__(self):
         return self.__str__()
 
-
 class MarkovACTR(MarkovState):
+
     def __init__(self, setup=False):
         self.index = 0
         self.log = []
@@ -386,7 +407,6 @@ class MarkovACTR(MarkovState):
         # init pseudo_random_table
         self.init_pseudo_random_tables()
 
-
     def setup(self,
               model="markov-model1",
               actr_params=None,
@@ -402,19 +422,20 @@ class MarkovACTR(MarkovState):
         script_dir = os.path.join(os.path.dirname(os.path.realpath('../__file__')), 'script')
         # print('test curr_dir', script_dir)
 
-
         self.add_actr_commands()
+
         if reload:
             # schedule event of detect production/reward before loading model
             # note: if not load, no need to schedule it again
-            # actr.schedule_event_now("detect-produc            # actr.schedule_event_now("detect-production-hook")tion-hook")
-            # actr.schedule_event_now("detect-reward-hook")
 
-            # load model
+            # load core
             actr.load_act_r_model(os.path.join(script_dir, "markov-core.lisp"))
             actr.load_act_r_model(os.path.join(script_dir, model + ".lisp"))
             actr.add_dm(*self.actr_dm())
             actr.load_act_r_model(os.path.join(script_dir, "markov-memory.lisp"))
+
+            # need to schedule event after loading models
+            actr.schedule_event_now("detect-production-hook")
 
         # init parameter sets
         self.actr_parameters = self.get_default_actr_parameters()
@@ -437,6 +458,22 @@ class MarkovACTR(MarkovState):
         if verbose: print(self.__str__())
 
     @property
+    def onset(self):
+        return self._onset
+
+    @onset.setter
+    def onset(self, val):
+        self._onset = val
+
+    @property
+    def offset(self):
+        return self._offset
+
+    @offset.setter
+    def offset(self, val):
+        self._offset = val
+
+    @property
     def response_time(self):
         return self.offset - self.onset
 
@@ -452,6 +489,7 @@ class MarkovACTR(MarkovState):
         actr.add_command("markov-update-reward-probability", self.update_random_walk_reward_probabilities, "Update reward probability: before state0")
         actr.add_command("detect-production-hook", self.cycle_hook_func, "define cycle_hook_func func")
 
+
     def remove_actr_commands(self):
         actr.remove_command("markov-update-state0")
         actr.remove_command("markov-update-state1")
@@ -466,14 +504,6 @@ class MarkovACTR(MarkovState):
     def respond_to_key_press(self, model, key):
         self.response = key
         actr.clear_exp_window()
-        self.offset = actr.mp_time()
-        # print('\toffset', self.offset)
-        # print('test rt', self.response_time)
-        # print('previous state', self.markov_state.state,
-        #       'self.onset', self.onset,
-        #        'self.offset', self.offset,
-        #      'response', key,
-        #      'rt: ', self.response_time)
 
         # imortant step to proceed task
         # by calling next_step()
@@ -491,37 +521,18 @@ class MarkovACTR(MarkovState):
            this function will be called in respond_to_key_press() in state 1, 2
            and in update_state3() in state 3
         '''
+        # print('testL 533, ', self.markov_state.state)
 
         if self.markov_state.state == 0:
             self.markov_state.state1(self.response)
-            self.markov_state.state1_response_time = self.response_time
-            actr.schedule_event_relative(.01, "markov-update-state2")
+            actr.schedule_event_now("markov-update-state2")
 
         else:
             self.markov_state.state2(self.response)
-            self.markov_state.state2_response_time = self.response_time
 
             # continue deliver rewards, no need to wait for response
             self.markov_state.reward()
-            actr.schedule_event_relative(.01, "markov-update-state3")
-
-
-        # log
-        if self.markov_state.state == 3:
-
-            # log actr trace
-            # if self.log_full_trace is enabled, every trials' trace will be stored
-            # if not, only last trial or all trials
-            if self.log_full_trace:
-                self.markov_state.actr_chunk_trace = {':Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Activation'),
-                                                      ':Last-Retrieval-Activation':self.markov_state.get_actr_chunk_trace(parameter_name=':Last-Retrieval-Activation'),
-                                                      ':Reference-Count':self.markov_state.get_actr_chunk_trace(parameter_name=':Reference-Count')}
-                self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(parameter_name=':utility')
-
-            self.log.append(self.markov_state)
-
-            if self.verbose:
-                print(self.markov_state)
+            actr.schedule_event_now("markov-update-state3")
 
     def update_state0(self):
         # self.markov_state = MarkovState()
@@ -616,14 +627,47 @@ class MarkovACTR(MarkovState):
         :param params: **params are production names
         :return:
         """
-        production_name = params[0]
-        if production_name.startswith('ATTEND'):
-            self.onset = actr.mp_time()
-            # print('\tonset', self.onset)
-        # if production_name.startswith('ENCODE-STATE'):
-        #     self.offset = actr.mp_time()
-        #     print('\toffset', self.offset)
-        # print(actr.mp_time(), *params)
+        # note: do not access production when **params is None
+        params_list = [*params]
+        try:
+            # print(actr.mp_time(), params_list, self.markov_state.state)
+            production_name = params_list[0]
+            if production_name.startswith('ATTEND'):
+                self.onset = actr.mp_time()
+                # print('\tonset', self.onset)
+            if production_name.startswith('ENCODE-STATE'):
+                # TODO: FIX RT bugs
+                self.offset = actr.mp_time()
+                # print('\toffset', self.offset)
+                if self.markov_state.state == 1:
+                    self.markov_state.state1_response_time = self.response_time
+                if self.markov_state.state == 3:
+                    self.markov_state.state2_response_time = self.response_time
+
+                    # save trial information
+                    self.log_trial()
+        except:
+            pass
+
+    def log_trial(self):
+        """
+        Log trial data and actr trace information
+        if self.log_full_trace is enabled, every trials' trace will be stored
+        if not, only last trial or all trials
+        """
+        if self.log_full_trace:
+            self.markov_state.actr_chunk_trace = {
+                ':Activation': self.markov_state.get_actr_chunk_trace(parameter_name=':Activation'),
+                ':Last-Retrieval-Activation': self.markov_state.get_actr_chunk_trace(
+                    parameter_name=':Last-Retrieval-Activation'),
+                ':Reference-Count': self.markov_state.get_actr_chunk_trace(
+                    parameter_name=':Reference-Count')}
+            self.markov_state.actr_production_trace = self.markov_state.get_actr_production_trace(
+                parameter_name=':utility')
+        self.log.append(self.markov_state)
+
+        if self.verbose:
+            print(self.markov_state)
 
     def run_experiment(self, n=2):
         """
@@ -924,9 +968,10 @@ class MarkovACTR(MarkovState):
         # if random walk is enabled, curr_reward_probability_dict is reward_probability_random_walk
         # otherwise, curr_reward_probability_dict is reward_probability_fixed
 
-        df = pd.DataFrame([{'state2_selected_stimulus': s.state2_selected_stimulus,
-                                 'received_reward': s.received_reward,
-                                 **s.curr_reward_probability_dict} for s in self.log]).reset_index()
+        df = pd.DataFrame([{'state1_selected_stimulus': s.state1_selected_stimulus,
+                         'state2_selected_stimulus': s.state2_selected_stimulus,
+                         'received_reward': s.received_reward,
+                         **s.curr_reward_probability_dict} for s in self.log]).reset_index()
         if format == 'wide':
             return df
         else:
@@ -945,11 +990,8 @@ class MarkovACTR(MarkovState):
         Third, find out the state2 response with hightest reward probability, this is the optimal response
         Lastly, join the optimal response back to wide df
         """
-        df_wide = pd.DataFrame([{'state1_selected_stimulus': s.state1_selected_stimulus,
-                                 'state2_selected_stimulus': s.state2_selected_stimulus,
-                                 'received_reward': s.received_reward,
-                                 **s.curr_reward_probability_dict} for s in self.log]).reset_index()
-        df_wide['index_bin'] = pd.cut(df_wide['index'], num_bin, labels=False, ordered=False, right=False)
+        df_wide = self.df_reward_probabilities(format = 'wide')
+        df_wide['index_bin'] = pd.cut(df_wide['index'], num_bin) #, labels=False, ordered=False, right=False)
         df_max = df_wide.groupby(['index_bin'])[['B1', 'B2', 'C1', 'C2']].mean().reset_index()
 
         # estimate the optimal state2 response by highest reward probabilities

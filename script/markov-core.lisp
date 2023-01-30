@@ -74,41 +74,39 @@
 
 (clear-all)
 (define-model markov-model
-    (sgp ;:seed (100 0)
-         :er t
-         :esc t
-         :ncnar t ;normalize chunk names after run
-         :model-warnings nil
-         ;;; ACTIVATION PARAMETER
+    (sgp ;;; ----------------- ACTIVATION PARAMETER -----------------
          :ans 0.2
-         :lf 0.5      ;latency factor: if 0, 
-                    ;immediately retrieve memory (higher activation, retrieve faster)
-         :bll 0.5    ;enable base-level leanring, decay rate
+         :lf 0.5     ; latency factor: if 0 ;immediately retrieve memory (higher activation, retrieve faster)
+         :bll 0.5    ; enable base-level learning, decay rate
          :mas 2
          :rt -5  ;retrieval threshold
-         ;;; UTILITY PARAMETER
+         ;:imaginal-activation 3.0
+         ;;; ----------------- UTILITY PARAMETER-----------------
          :ul t
          ;:epl t ; Enable Production Learning
          :egs 0.2
          :alpha 0.2
-         ;:imaginal-activation 3.0
-         ;:motor-feature-prep-time 0.01
          ;:dat 0.05  ; default action time for all productions
-         :show-focus t 
+         ;;; ----------------- OTHER PARAMETER-----------------
+         ;:seed (100 0)
+         :er t
+         :esc t
+         ;:motor-feature-prep-time 0.01
+         :show-focus t
          :needs-mouse t
          :auto-attend t
-
-         ;;; TRACE PARAMETER
-         :model-warnings nil
+         ;;; ----------------- HOOK PARAMETER-----------------
+         :cycle-hook "detect-production-hook"; (:remove "detect-production-hook")
+         ;;; ----------------- TRACE PARAMETER -----------------
          :v nil
+         :ncnar t ;normalize chunk names after run
+         :model-warnings nil
          ;:trace-detail low
          ;:ult t
-         ; :act t
-         :trace-filter production-firing-only
+         ;:act t
+         ;:trace-filter production-firing-only
          ;:pct t
          ;:blt t
-         ;:reward-hook "detect-reward-hook"
-         :cycle-hook "detect-production-hook"
 
     )
 )
