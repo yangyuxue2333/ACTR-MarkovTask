@@ -953,7 +953,7 @@
    =goal>
      ; one-time refresh
      step  refresh-success
-     > updated-motivation 0 
+     ; > updated-motivation 0
    
 ==> 
    

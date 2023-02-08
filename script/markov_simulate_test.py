@@ -714,12 +714,12 @@ def calculate_LL(subject_agg, model_agg, model_name):
     df_merge = pd.merge(subject_agg, model_agg, on=['pre_received_reward', 'state_frequency'], suffixes=('.s', '.m'))
     # state1stay
     df_merge['state1_stay_z'] = df_merge.apply(
-        lambda x: (x['state1_stay_mean.s'] - x['state1_stay_mean.m']) / max(x['state1_stay_mean.s'], 1e-10), axis=1)
+        lambda x: (x['state1_stay_mean.s'] - x['state1_stay_mean.m']) / max(x['state1_stay_std.s'], 1e-10), axis=1)
     df_merge['state1_stay_probz'] = df_merge.apply(lambda x: norm.pdf(x['state1_stay_z']), axis=1)
     df_merge['state1_stay_logprobz'] = df_merge.apply(lambda x: np.log(max(x['state1_stay_probz'], 1e-10)), axis=1)
 
     # rt1
-    df_merge['rt1_z'] = df_merge.apply(lambda x: (x['state1_response_time_mean.s'] - x['state1_response_time_mean.m']) / max(x['state1_response_time_mean.s'], 1e-10), axis=1)
+    df_merge['rt1_z'] = df_merge.apply(lambda x: (x['state1_response_time_mean.s'] - x['state1_response_time_mean.m']) / max(x['state1_response_time_std.s'], 1e-10), axis=1)
     df_merge['rt1_probz'] = df_merge.apply(lambda x: norm.pdf(x['rt1_z']), axis=1)
     df_merge['rt1_logprobz'] = df_merge.apply(lambda x: np.log(max(x['rt1_probz'], 1e-10)), axis=1)
 

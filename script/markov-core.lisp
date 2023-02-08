@@ -104,7 +104,7 @@
          ;:trace-detail low
          ;:ult t
          ;:act t
-         ;:trace-filter production-firing-only
+         :trace-filter production-firing-only
          ;:pct t
          ;:blt t
 
