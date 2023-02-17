@@ -13,3 +13,4 @@ script/markov-model2-*
 script/markov-model3-*
 .R*
 *.Rproj
+/analysis/__cahce__/
