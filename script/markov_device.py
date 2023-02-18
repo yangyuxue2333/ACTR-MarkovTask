@@ -29,6 +29,7 @@ LOCATION = ("LEFT", "RIGHT")
 RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
                 {'f':'B1', 'k':'B2'},
                 {'f':'C1', 'k':'C2'}]
+RESPONSE_CODE = {'f':'L', 'k':'R'}
 
 # ACTR PARAMETERS
 ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'mas', 'egs', 'alpha', 'imaginal-activation']
@@ -304,12 +305,7 @@ class MarkovState():
         return a list of DM chunk names
         ['M1-1', 'M1-2'...]
         """
-
-        res = []
-        for i in ['A', 'B', 'C']:
-            for j in range(1, 5):
-                res.append('M' + '-' + i + str(j))
-        self._actr_chunk_names = res
+        assert (len(self._actr_chunk_names) > 0)
         return self._actr_chunk_names
 
     @property
@@ -366,10 +362,10 @@ class MarkovState():
     def __str__(self):
         return "<[%s] \t[%s, %.2f]'%s' \t[%s, %.2f]'%s' \tR:[%s] \t[%s][%s]" % (
             self.kind,
-            self.state1_response,
+            RESPONSE_CODE[self.state1_response],
             self.state1_response_time,
             self.state1_selected_stimulus,
-            self.state2_response,
+            RESPONSE_CODE[self.state2_response],
             self.state2_response_time,
             self.state2_selected_stimulus,
             self.received_reward,
@@ -694,11 +690,10 @@ class MarkovACTR(MarkovState):
             production_name = params_list[0]
             if production_name.startswith('ATTEND'):
                 self.onset = actr.mp_time()
-                # print('\tonset', self.onset)
+                # print('\tonset', self.onset, production_name)
             if production_name.startswith('ENCODE-STATE'):
-                # TODO: FIX RT bugs
                 self.offset = actr.mp_time()
-                # print('\toffset', self.offset)
+                # print('\toffset', self.offset, production_name)
                 if self.markov_state.state == 1:
                     self.markov_state.state1_response_time = self.response_time
                 if self.markov_state.state == 3:
@@ -908,7 +903,8 @@ class MarkovACTR(MarkovState):
         """
 
         global REWARD
-        reward = [max(REWARD.values()), 0]
+        #reward = [max(REWARD.values()), 0]
+        reward = [1, 0]
         comb1 = [i for i in itertools.product(['A'], ['LEFT', 'RIGHT'], ['B', 'C'], ['none'])]
         comb2 = [i for i in itertools.product(['B', 'C'], ['LEFT', 'RIGHT'], ['none'], reward)]
         comb = comb1 + comb2
@@ -919,7 +915,7 @@ class MarkovACTR(MarkovState):
             i += 1
             if i > 4: i = 1  # 4 * 3 memory
             #print(s, a, s_, r)
-            name = 'M' + '-' + s + str(i)
+            name = '%s%s-%s-%s-%s' % (s, str(i), str(a), str(s_), str(r))
             dm.append([name, 'isa', 'wm',
                        'status', 'process',
                        'left-stimulus', s+'1',
@@ -928,6 +924,9 @@ class MarkovACTR(MarkovState):
                        'next-state', s_,
                        'response', a,
                        'reward', r])
+        # define chunk name
+        chunk_names = [m[0] for m in dm]
+        self._actr_chunk_names = chunk_names
         return dm
 
     def get_default_actr_parameters(self):
@@ -982,6 +981,7 @@ class MarkovACTR(MarkovState):
         df['pre_received_reward'] = df['received_reward'].shift()
         df['pre_received_reward'] = df.apply(lambda x: x['pre_received_reward'] if  pd.isnull(x['pre_received_reward'])\
             else ('non-reward' if x['pre_received_reward']==0 else 'reward'), axis=1)
+        df['pre_state_frequency'] = df['state_frequency'].shift()
         return df
 
     def calculate_stay_probability(self):
@@ -999,10 +999,10 @@ class MarkovACTR(MarkovState):
             lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0), axis=1)
         # df['pre_received_reward'] = df['received_reward'].shift()
         # df['pre_received_reward'] = df.apply(lambda x: 'non-reward' if x['pre_received_reward'] == 0 else 'reward', axis=1)
-        df = df.dropna(subset=['state1_stay', 'pre_received_reward'])
-        df = df.astype({'state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
+        df = df.dropna(subset=['state1_stay', 'pre_received_reward', 'pre_state_frequency'])
+        df = df.astype({'pre_state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
                         'pre_received_reward': CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
-        df = df[['index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay', 'state1_response_time', 'state2_response_time']]
+        df = df[['index', 'state_frequency', 'received_reward', 'pre_received_reward', 'pre_state_frequency', 'state1_stay', 'state1_response_time', 'state2_response_time']]
         return df
 
     def calculate_real_frequency(self, merge=False):

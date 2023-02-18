@@ -497,35 +497,22 @@ class Simulation:
         a, b, c, d, e = x['state1_selected_stimulus'], x['state2_selected_stimulus'], x['state1_response'], x[
             'state2_response'], x['received_reward']
         if a[0] == 'A' and b[0] == 'B' and c == 'f':
-            return 'M-A1'
+            return 'A1-%s-%s-%s' % (RESPONSE_CODE[c], b[0] , 'none')
         if a[0] == 'A' and b[0] == 'B' and c == 'k':
-            return 'M-A2'
+            return 'A3-%s-%s-%s' % (RESPONSE_CODE[c], b[0] , 'none')
         if a[0] == 'A' and b[0] == 'C' and c == 'f':
-            return 'M-A3'
+            return 'A2-%s-%s-%s' % (RESPONSE_CODE[c], b[0] , 'none')
         if a[0] == 'A' and b[0] == 'C' and c == 'k':
-            return 'M-A4'
+            return 'A4-%s-%s-%s' % (RESPONSE_CODE[c], b[0] , 'none')
 
     @staticmethod
     def map_func2(x):
         a, b, c, d, e = x['state1_selected_stimulus'], x['state2_selected_stimulus'], x['state1_response'], x[
             'state2_response'], x['received_reward']
-        if b == 'B1' and d == 'f' and e == 3:
-            return 'M-B1'
-        if b == 'B1' and d == 'f' and e == 0:
-            return 'M-B2'
-        if b == 'B2' and d == 'k' and e == 3:
-            return 'M-B3'
-        if b == 'B2' and d == 'k' and e == 0:
-            return 'M-B4'
-
-        if b == 'C1' and d == 'f' and e == 3:
-            return 'M-C1'
-        if b == 'C1' and d == 'f' and e == 0:
-            return 'M-C2'
-        if b == 'C2' and d == 'k' and e == 3:
-            return 'M-C3'
-        if b == 'C2' and d == 'k' and e == 0:
-            return 'M-C4'
+        if e > 0:
+            return '%s-%s-%s-%s' % (b, RESPONSE_CODE[d], 'none', 1)
+        else:
+            return '%s-%s-%s-%s' % (b, RESPONSE_CODE[d], 'none', 0)
 
     @staticmethod
     def process_memory_data(dfm):
