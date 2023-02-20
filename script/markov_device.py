@@ -1018,19 +1018,57 @@ class MarkovACTR(MarkovState):
         df = self.df_behaviors()
         df['state1_selected_stimulus_type'] = df.apply(lambda x: x['state1_selected_stimulus'][0], axis=1)
         df['state2_selected_stimulus_type'] = df.apply(lambda x: x['state2_selected_stimulus'][0], axis=1)
+        df['state1_response'] = df.apply(lambda x: x[['state1_response']].map({'f': 'LEFT', 'k': 'RIGHT'}), axis=1)
+        df['state2_response'] = df.apply(lambda x: x[['state2_response']].map({'f': 'LEFT', 'k': 'RIGHT'}), axis=1)
+        df['received_reward'] = df.apply(lambda x: x[['received_reward']].map({0: 'non-reward', 1: 'reward'}), axis=1)
 
-        df1 = pd.DataFrame(df.value_counts(['state1_selected_stimulus'], normalize=True),
-                           columns=['state1_frequency']).reset_index()
-        df2 = pd.DataFrame(df[df['state1_selected_stimulus'] == 'A1'].value_counts(
-            ['state1_selected_stimulus', 'state2_selected_stimulus_type'], normalize=True),
-            columns=['state2_frequency1']).reset_index()
-        df3 = pd.DataFrame(df[df['state1_selected_stimulus'] == 'A2'].value_counts(
-            ['state1_selected_stimulus', 'state2_selected_stimulus_type'], normalize=True),
-            columns=['state2_frequency2']).reset_index()
-        res = df1.merge(df2, how='outer').merge(df3, how='outer')
-        if merge:
-            res = df.merge(df1, how='left').merge(df2, how='left').merge(df3, how='left').round(2)
-        return res
+        # convert to categorical var
+        # df['state1_selected_stimulus_type'] = pd.CategoricalDtype(df['state1_selected_stimulus_type'])
+        # df['state2_selected_stimulus_type'] = pd.CategoricalDtype(df['state2_selected_stimulus_type'], categories=['B', 'C'])
+        # df['state1_response'] = pd.CategoricalDtype(df['state1_response'], categories=['LEFT', 'RIGHT'])
+        # df['state2_response'] = pd.CategoricalDtype(df['state2_response'], categories=['LEFT', 'RIGHT'])
+        # df['received_reward'] = pd.CategoricalDtype(df['received_reward'], categories=['reward', 'non-reward'])
+        df = df.astype({'state1_selected_stimulus_type': 'category',
+                        'state2_selected_stimulus_type': pd.CategoricalDtype(categories=['B', 'C']),
+                        'state1_response': pd.CategoricalDtype(categories=['LEFT', 'RIGHT'], ordered=True),
+                        'state2_response': pd.CategoricalDtype(categories=['LEFT', 'RIGHT'], ordered=True),
+                        'received_reward': pd.CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
+
+        df1 = df.groupby(['state1_selected_stimulus_type', 'state2_selected_stimulus_type', 'state1_response'])[
+            'index'].count().reset_index()
+        df2 = df.groupby(
+            ['state1_selected_stimulus_type', 'state2_selected_stimulus_type', 'state2_response', 'received_reward'])[
+            'index'].count().reset_index()
+
+        df1 = df1.rename(columns={'index': 'count'})
+        df2 = df2.rename(columns={'index': 'count'})
+
+        # add memory name
+        df1 = df1.sort_values(by=['state1_selected_stimulus_type', 'state1_response'],
+                              ascending=[True, True])
+        df1['memory'] = self.actr_chunk_names[:4]
+
+        df2 = df2.sort_values(by=['state2_selected_stimulus_type', 'state2_response', 'received_reward'],
+                              ascending=[True, True, True])
+        df2['memory'] = self.actr_chunk_names[4:]
+
+        return df1, df2
+        # df = self.df_behaviors()
+        # df['state1_selected_stimulus_type'] = df.apply(lambda x: x['state1_selected_stimulus'][0], axis=1)
+        # df['state2_selected_stimulus_type'] = df.apply(lambda x: x['state2_selected_stimulus'][0], axis=1)
+        #
+        # df1 = pd.DataFrame(df.value_counts(['state1_selected_stimulus'], normalize=True),
+        #                    columns=['state1_frequency']).reset_index()
+        # df2 = pd.DataFrame(df[df['state1_selected_stimulus'] == 'A1'].value_counts(
+        #     ['state1_selected_stimulus', 'state2_selected_stimulus_type'], normalize=True),
+        #     columns=['state2_frequency1']).reset_index()
+        # df3 = pd.DataFrame(df[df['state1_selected_stimulus'] == 'A2'].value_counts(
+        #     ['state1_selected_stimulus', 'state2_selected_stimulus_type'], normalize=True),
+        #     columns=['state2_frequency2']).reset_index()
+        # res = df1.merge(df2, how='outer').merge(df3, how='outer')
+        # if merge:
+        #     res = df.merge(df1, how='left').merge(df2, how='left').merge(df3, how='left').round(2)
+        # return res
 
     def df_reward_probabilities(self, dataframe='long'):
         """
@@ -1161,9 +1199,8 @@ class MarkovACTR(MarkovState):
                 df2 = pd.merge(df21, df22)
                 df2['index_bin'] = pd.cut(df2['index'], 10, labels=False)
                 df2.replace(to_replace=[None], value=np.nan, inplace=True)
-                # df2['memory_type'] = df2.apply(lambda x: 'non-reward' if 'M0' in x['memory'] else 'reward', axis=1)
-                df2['memory_type'] = 'non-reward'
-                df2.loc[df2['memory'].str.endswith(('B1', 'B3', 'C1', 'C3')), 'memory_type'] = 'reward'
+                df2['memory_type'] = df2.apply(lambda x:x['memory'].split('-')[-1], axis=1).\
+                    replace(to_replace=['1', '0'], value=['reward', 'non-reward'])
             except:
                 print('no memory trace')
                 df2 = None
@@ -1182,7 +1219,6 @@ class MarkovACTR(MarkovState):
             df1['response'] = df1.apply(lambda x: 'LEFT' if ('LEFT' in x['action']) else 'RIGHT', axis=1)
 
             # memory trace
-            #chunk_names = ['M-A1', 'M-A2', 'M-A3', 'M-A4', 'M-B1', 'M-B2', 'M-B3', 'M-B4', 'M-C1', 'M-C2', 'M-C3', 'M-C4']
             df2 = pd.DataFrame(np.array([self.actr_chunk_names,
              [actr.sdp(t, ':Reference-Count')[0][0] for t in self.actr_chunk_names],
              [actr.sdp(t, ':Activation')[0][0] for t in self.actr_chunk_names],
@@ -1191,8 +1227,13 @@ class MarkovACTR(MarkovState):
                      ':Activation': float, ':Last-Retrieval-Activation': float}).reset_index()
 
             df2.replace(to_replace=[None], value=np.nan, inplace=True)
-            df2['memory_type'] = 'non-reward'
-            df2.loc[df2['memory'].str.endswith(('B1', 'B3', 'C1', 'C3')), 'memory_type'] = 'reward'
+            df2['memory_type'] = df2.apply(lambda x:x['memory'].split('-')[-1], axis=1).\
+                replace(to_replace=['1', '0'], value=['reward', 'non-reward'])
+
+            # add trial counts
+            df_count1, df_count2 = self.calculate_real_frequency()
+            df_count = pd.concat([df_count1[['memory', 'count']], df_count2[['memory', 'count']]], axis=0, ignore_index=True)
+            df2 = df2.merge(df_count, how='left', on='memory')
             return df1, df2
 
     def __str__(self):

@@ -96,7 +96,8 @@
          :needs-mouse t
          :auto-attend t
          ;;; ----------------- HOOK PARAMETER-----------------
-         :cycle-hook "detect-production-hook"; (:remove "detect-production-hook")
+         ;:cycle-hook "detect-production-hook"; (:remove "detect-production-hook")
+         ;:chunk-merge-hook "detect-merge-hook"
          ;;; ----------------- TRACE PARAMETER -----------------
          :v nil
          :ncnar t ;normalize chunk names after run
