@@ -527,7 +527,7 @@ class Simulation:
 
 
 class MaxLogLikelihood:
-    MAXLL_FACTOR_VAR = ['pre_received_reward', 'state_frequency']
+    MAXLL_FACTOR_VAR = ['pre_received_reward', 'pre_state_frequency']
     MAXLL_DEP_VAR = ['state1_stay', 'state1_response_time', 'state2_response_time']
     MAXLL_PARAMETERS = ['ans', 'egs', 'alpha', 'lf', 'bll', 'REWARD', 'M']
 
@@ -633,6 +633,7 @@ class MaxLogLikelihood:
             # unstack df to wide format
             df_practice_wide = pd.merge(df_practice1, df_practice2, on=['subject_id', 'index'])
             df_practice_wide['pre_received_reward'] = df_practice_wide['received_reward'].shift()
+            df_practice_wide['pre_state_frequency'] = df_practice_wide['state_frequency'].shift()
             df_practice_wide['pre_state1_response'] = df_practice_wide['state1_response'].shift()
             df_practice_wide['state1_stay'] = df_practice_wide.apply(
                 lambda x: 1 if x['pre_state1_response'] == x['state1_response'] else 0, axis=1)
@@ -657,6 +658,7 @@ class MaxLogLikelihood:
             # unstack data to wide format
             df_test_wide = pd.merge(df_test1, df_test2, on=['subject_id', 'index'])
             df_test_wide['pre_received_reward'] = df_test_wide['received_reward'].shift()
+            df_test_wide['pre_state_frequency'] = df_test_wide['state_frequency'].shift()
             df_test_wide['pre_state1_response'] = df_test_wide['state1_response'].shift()
             df_test_wide['state1_stay'] = df_test_wide.apply(
                 lambda x: 1 if x['pre_state1_response'] == x['state1_response'] else 0, axis=1)
@@ -665,8 +667,9 @@ class MaxLogLikelihood:
                 lambda x: 'reward' if int(x['pre_received_reward']) == 1 else 'non-reward', axis=1)
 
             #reorder columns
-            col_order = ['subject_id', 'index', 'state_frequency', 'received_reward', 'pre_received_reward',
-                         'state1_stay', 'state1_response_time', 'state2_response_time']
+            col_order = ['subject_id', 'index', 'state_frequency', 'received_reward',
+                         'pre_received_reward', 'pre_state_frequency',
+                         'state1_response', 'state2_response', 'state1_stay', 'state1_response_time', 'state2_response_time']
             df_practice_wide = df_practice_wide[col_order]
             df_test_wide = df_test_wide[col_order]
 
