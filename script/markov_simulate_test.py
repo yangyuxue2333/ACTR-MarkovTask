@@ -1327,7 +1327,7 @@ class Plot:
 
 
     @staticmethod
-    def plot_learning_performance(dfp, title):
+    def plot_learning_performance(dfp, num_bins=10, title=''):
         """
         Plot learning trajectory
         :param dfr: cumulative reward
@@ -1335,12 +1335,14 @@ class Plot:
         :return:
         """
         assert set(['optimal_response_sum_prop', 'received_reward_sum_prop']).issubset(set(dfp.columns))
+        dfp['index_bin'] = pd.cut(dfp['index'], num_bins, labels=False, ordered=False, right=False)
+
         fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        fig.suptitle('Summary: [%s] Learning Performance (Cumulative)' %(title))
-        sns.lineplot(data=dfp, x='index', y='optimal_response_sum_prop',
-                     label='performance (cumulative)', color='steelblue', ax=ax)
-        sns.lineplot(data=dfp, x='index', y='received_reward_sum_prop',
-                     label='rewards (cumulative)', color='tomato', ax=ax)
+        fig.suptitle('Summary: [%s] \nLearning Performance (%s bins)' % (title, num_bins))
+        sns.lineplot(data=dfp, x='index_bin', y='is_optimal',
+                     label='optimal responses', color='steelblue', ax=ax)
+        sns.lineplot(data=dfp, x='index_bin', y='received_reward',
+                     label='gained rewards', color='tomato', ax=ax)
 
         ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
         ax.set_ylim(0, 1)
