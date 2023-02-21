@@ -6,6 +6,8 @@ import time
 import glob
 from scipy.stats import norm
 import itertools
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 global convergence
 convergence = 100
@@ -17,7 +19,7 @@ convergence = 100
 
 class Simulation:
     @staticmethod
-    def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=0, verbose=False):
+    def simulate(model="markov-model1", n=20, task_params=None, actr_params=None, thresh=None, verbose=False):
         """
         Simulate markov model
         @param: thresh determines whether the model learns optimal action sequence
@@ -38,59 +40,37 @@ class Simulation:
         m = MarkovACTR(setup=False)
         m.setup(model=model, actr_params=actr_params, task_params=task_params, reload=True, verbose=verbose)
         m.run_experiment(n)
-        df = m.df_postprocess_behaviors()
+        if not thresh:
+            return m
 
-        perf = df['optimal_response_sum_prop'].loc[len(df) - 1]
-        if perf >= thresh:
+        # threshold based on overall stay
+        # if stay >= 1, exclude this simulation
+        # otherwise, keep this
+        df_stay = m.calculate_stay_probability()
+        perf = df_stay['state1_stay'].mean()
+
+
+        # threshold based on optimal performance
+        # df = m.df_postprocess_behaviors()
+        # perf = df['optimal_response_sum_prop'].loc[len(df) - 1]
+
+        if perf < thresh:
             if verbose: print(m)
             return m
         else:
-            if verbose: print('>>> Not converged yet %.2f <<< [threshold = %.2f]' % (perf, thresh))
+            print('>>> bad simulation %.2f <<< [threshold = %.2f]' % (perf, thresh))
             convergence -= 1
             return Simulation.simulate(model, n, task_params, actr_params, thresh)
-# def simulate_response_monkey(model="markov-monkey", epoch=1, n=20):
-#     rewards = 0.0
-#     beh_list, state1stay_list = [], []
-#
-#     start_time = time.time()
-#     for i in tqdm(range(epoch)):
-#         m = MarkovHuman(model, verbose=False)
-#         m.run_experiment(n)
-#         if (i == 0): print(m)
-#         m.run_experiment(n)
-#
-#         state1stay = m.calculate_stay_probability()
-#         beh = m.df_postprocess_behaviors()
-#         state1stay['epoch'] = i
-#         beh['epoch'] = i
-#
-#         beh_list.append(beh)
-#         state1stay_list.append(
-#             # state1stay.groupby(['epoch', 'received_reward', 'reward_frequency', 'state_frequency']).agg(
-#             state1stay.groupby(['epoch', 'received_reward', 'state_frequency']).agg(
-#                 {'state1_stay': lambda x: x.mean(skipna=True)}).reset_index())
-#
-#         rewards += beh['received_reward'].sum() / len(beh)
-#
-#     max_id = np.argmax(list(m.task_parameters['REWARD_PROBABILITY'].values()))
-#     expected_reward = list(m.task_parameters['REWARD'].values())[max_id] * \
-#                       list(m.task_parameters['REWARD_PROBABILITY'].values())[max_id]
-#     print('>>>>>>>>> SIMULATION REWARD GAINED <<<<<<<<<< \t EPOCH:', epoch)
-#     print('GAINED R: %.2f (EXPECTED R: %.2f) \t [%.2f %%]\n\n\n\n' % (
-#     (rewards / epoch), expected_reward, 100 * (rewards / epoch) / expected_reward))
-#     df_beh = pd.concat(beh_list, axis=0)
-#     df_state1stay = pd.concat(state1stay_list, axis=0)
-#     return df_beh, df_state1stay
 
     @staticmethod
-    def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, log=False, verbose=False):
+    def simulate_stay_probability(model="markov-model1", epoch=1, n=20, task_params=None, actr_params=None, log=False, thresh=None, verbose=False):
         rewards = 0.0
         beh_list, state1stay_list, utrace_list, atrace_list = [], [], [], []
 
         start_time = time.time()
         # for i in tqdm(range(epoch)):
         for i in range(epoch):
-            m = Simulation.simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=0, verbose=verbose)
+            m = Simulation.simulate(model=model, n=n, task_params=task_params, actr_params=actr_params, thresh=thresh, verbose=verbose)
             if (i==0 and verbose): print(m)
 
             # stay probability
@@ -122,6 +102,11 @@ class Simulation:
 
                 # plot
                 rewards += beh['received_reward'].sum()/len(beh)
+
+            # show estimated time
+            if (i==0):
+                duration = (epoch * (time.time() - start_time)) / 60
+                print("...ESTIMATED RUN TIME [%.2f] (min)..." % (duration))
 
 
         if log:
@@ -382,113 +367,6 @@ class Simulation:
         if verbose: print(check_msg)
         return pass_check
 
-
-# def get_df_log(log_dir='data/model/param_simulation_0121/'):
-#     """
-#     :return a df of all df_log contain simulation parameters
-#     :param log_dir: 'data/model/param_simulation_0121/')
-#     :return:
-#     """
-#     assert (os.getcwd().split("/")[-1] == 'ACTR-MarkovTask')
-#     df_list = []
-#     param_files = np.sort(glob.glob(log_dir + 'param*/log.csv'))
-#     if len(param_files) == 0:
-#         return pd.DataFrame()
-# 
-#     for f in param_files:
-#         df_log = pd.read_csv(f, header=0, index_col=0).drop(columns=['file_path']).drop_duplicates()
-#         df_log['param_id'] = f.split('/')[-2]
-#         df_list.append(df_log)
-# 
-#     df_log = pd.concat(df_list, axis=0).reset_index()
-#     df_log = df_log.assign(task_id=lambda x: x['param_id'].str.split('_', expand=True)[1].str.extract('(\d+)'),
-#                            actr_id=lambda x: x['param_id'].str.split('_', expand=True)[2].str.extract('(\d+)')).astype({
-#         'task_id': int, 'actr_id': int
-#     })
-#     return df_log
-# 
-# def check_parameters(log_dir, task_param_set, actr_param_set, epoch, n):
-#     """
-#     :param log_dir: 'data/model/param_simulation_0121/'
-#     :param task_param_set:
-#     :param actr_param_set:
-#     :param epoch:
-#     :param n:
-#     :return:
-#     """
-#     '''
-#     if not os.path.exists(log_file_path):
-#         return False
-#     log = pd.read_csv(log_file_path, header=0, index_col=0).drop(columns=['file_path'])
-#     '''
-#     log = get_df_log(log_dir=log_dir)
-#     if log.empty:
-#         return False
-# 
-#     log_param_list = log.to_records(index=False).tolist()
-#     for log_param_set in log_param_list:
-#         curr_param_set = (epoch, n,
-#                           actr_param_set['seed'],
-#                           actr_param_set['ans'],
-#                           actr_param_set['egs'],
-#                           actr_param_set['alpha'],
-#                           # actr_param_set['v'],
-#                           actr_param_set['lf'],
-#                           actr_param_set['bll'],
-#                           actr_param_set['mas'],
-#                           str(task_param_set['REWARD']),
-#                           task_param_set['RANDOM_WALK'],
-#                           task_param_set['M'])
-# 
-#         if log_param_set == curr_param_set:
-#             return True
-#     return False
-# 
-# def get_next_param_id(log_dir, i, j):
-#     """
-#     :param log_dir: 'data/model/param_simulation_0121/'
-#     :param i: 
-#     :param j: 
-#     :return: 
-#     """
-#     log = get_df_log(log_dir=log_dir)
-#     if log.empty:
-#         # print('no log')
-#         next_task_id, next_actr_id = i, j
-#     else:
-#         # print('has log')
-#         next_task_id = log['task_id'].max() + 1
-#         next_actr_id = log['actr_id'].max() + 1
-#     param_id = 'param_task%d_actr%d/' % (next_task_id, next_actr_id)
-#     return param_id
-
-    @staticmethod
-    def temporary_update_stay_probability(df):
-        """
-        Only use to fix 'pre_received_reward' problems on 0115 simulation
-        Later simulated data have fixed this problem
-        Calculate the probability of stay:
-            A trial is marked as "STAY" if the agent selects the same action in current trial (e.g. LEFT)
-            as the previous trial
-        """
-        dff = df.copy()
-        dff['state1_stay'] = dff['state1_response'].shift() # first row is NA (look at previsou trial)
-        dff['state1_stay'] = dff.apply(
-            lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0),
-            axis=1)
-        dff['pre_received_reward'] = dff['received_reward'].shift()
-
-        dff = dff.dropna(subset=['state1_stay', 'pre_received_reward'])
-        dff.loc[:, ['pre_received_reward']] = dff.apply(lambda x: 'non-reward' if int(x['pre_received_reward']) == 0 else 'reward', axis=1)
-        dff = dff.astype({'state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
-                        'pre_received_reward': CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
-        try:
-            dff = dff[['epoch', 'index', 'state_frequency', 'received_reward', 'pre_received_reward', 'state1_stay', 'state1_response_time', 'state2_response_time']]
-        except:
-            dff['epoch'] = 0
-            return dff
-        return dff
-
     @staticmethod
     def map_func1(x):
         """
@@ -525,9 +403,48 @@ class Simulation:
                         .reset_index().rename(columns={'state2_memory': 'memory', 'index': 'trial_count'})], axis=0)
         return res
 
+    @staticmethod
+    def caluclate_optimal(df, main_dir, optimal_response='both'):
+        """
+        Calculate optimal response for subject data
+        :param df: test.csv
+        :param main_dir:
+        :param optimal_response:
+        :return:
+        """
+        assert optimal_response in ('state1', 'state2', 'both')
+        df = df.copy()
+        df_rp = pd.read_csv(os.path.join(main_dir, 'data/fixed/masterprob4.csv'))
+
+        df_rp.columns = ['B1', 'B2', 'C3', 'C4']
+        df_rp['state2_optimal'] = df_rp.apply(lambda x: df_rp.columns[x.argmax()], axis=1)
+        df_rp['state1_optimal'] = df_rp['state2_optimal'].map({'B1': 'A1', 'B2': 'A1', 'C3': 'A2', 'C4': 'A2'})
+        df_rp['state1_response_optimal'] = df_rp['state1_optimal'].map({'A1': 49.0, 'A2': 48.0})
+        df_rp['state2_response_optimal'] = df_rp['state2_optimal'].map({'B1': 49.0, 'B2': 48.0, 'C3': 49.0, 'C4': 48.0})
+        dfo = pd.concat([df, df_rp.head(200).drop(index=0)], axis=1)
+
+        dfo['state1_is_optimal'] = dfo.apply(lambda x: 1 if x['state1_response'] == x['state1_response_optimal'] else 0,
+                                             axis=1)
+        dfo['state2_is_optimal'] = dfo.apply(lambda x: 1 if x['state2_response'] == x['state1_response_optimal'] else 0,
+                                             axis=1)
+
+        if optimal_response == 'both':
+            dfo['is_optimal'] = dfo.apply(
+                lambda x: 1 if (x['state1_is_optimal'] == 1) & (x['state2_is_optimal'] == 1) else 0, axis=1)
+        else:
+            dfo['is_optimal'] = dfo[optimal_response + '_is_optimal']
+        dfo['performance'] = optimal_response
+
+        dfo['received_reward_norm'] = dfo['received_reward'] / dfo['received_reward'].max()
+        dfo['received_reward_sum'] = dfo.groupby(['subject_id'])['received_reward_norm'].cumsum()
+        dfo['optimal_response_sum'] = dfo.groupby(['subject_id'])['is_optimal'].cumsum()
+
+        dfo['received_reward_sum_prop'] = dfo.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
+        dfo['optimal_response_sum_prop'] = dfo.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
+        return dfo
 
 class MaxLogLikelihood:
-    MAXLL_FACTOR_VAR = ['pre_received_reward', 'pre_state_frequency']
+    MAXLL_FACTOR_VAR = ['pre_received_reward', 'pre_state_frequency'] #['pre_received_reward', 'pre_state_frequency']
     MAXLL_DEP_VAR = ['state1_stay', 'state1_response_time', 'state2_response_time']
     MAXLL_PARAMETERS = ['ans', 'egs', 'alpha', 'lf', 'bll', 'REWARD', 'M']
 
@@ -1259,3 +1176,172 @@ class MaxLogLikelihood:
                        list(df.select_dtypes(exclude='string').columns)
         res = df[reorder_cols]
         return res
+
+
+class Plot:
+    REWARD_FACTOR = 'pre_received_reward'
+    TRANS_FACTOR = 'pre_state_frequency'
+    PLOT_FACTOR_VAR = [REWARD_FACTOR, TRANS_FACTOR]
+    PALETTE = sns.color_palette(["#4374B3", "#FF0B04"])
+    FIT_HEIGHT = 4
+    FIG_WIDTH = 1.5 * FIT_HEIGHT
+
+    @staticmethod
+    def plot_response_switch(df, model_name, dep_var_suffix=''):
+        """
+        Plot state1_stay by pre_received_reward and pre_state_frequency
+        :param df:
+        :param model_name:
+        :return:
+        """
+        assert set(Plot.PLOT_FACTOR_VAR + ['state1_stay' + dep_var_suffix]).issubset(set(df.columns))
+        if len(dep_var_suffix) > 0:
+            se = 'se' # enable se
+        else:
+            se = None
+
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+        fig.suptitle('Summary: Stay Probability \n[%s]' % (model_name))
+
+        sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
+                    hue=Plot.TRANS_FACTOR, errorbar=se,
+                    palette=Plot.PALETTE, alpha=.8,
+                    order=['reward', 'non-reward'],
+                    hue_order=['common', 'rare'],
+                    ax=ax)
+
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%.2f', label_type='center')
+        ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
+        ax.set_ylim(0, 1.1)
+        plt.show()
+
+    @staticmethod
+    def plot_response_switch_stripplot(df_agg, model_name, point_hue = 'epoch'):
+        fig, axes = plt.subplots(1, 2, figsize=(1.5 * Plot.FIG_WIDTH, Plot.FIT_HEIGHT), sharex=True, sharey=True)
+        fig.suptitle('Response Switch: [%s]' % (model_name))
+
+        sns.stripplot(data=df_agg[df_agg[Plot.REWARD_FACTOR] == 'reward'], x=Plot.TRANS_FACTOR,
+                      y='state1_stay_mean', s=5, marker="o", linewidth=0, alpha=.8, dodge=False,
+                      order=['common', 'rare'], hue=Plot.TRANS_FACTOR, palette=Plot.PALETTE, ax=axes[0])
+        sns.pointplot(data=df_agg[df_agg[Plot.REWARD_FACTOR] == 'reward'],
+                      x=Plot.TRANS_FACTOR, y='state1_stay_mean',
+                      order=['common', 'rare'], color='black', dodge=False, join=True, scale=2, errorbar='se',
+                      markers='X', linestyles='solid', ax=axes[0])
+        sns.pointplot(data=df_agg[df_agg[Plot.REWARD_FACTOR] == 'reward'],
+                      x=Plot.TRANS_FACTOR, y='state1_stay_mean',
+                      dodge=False, join=True,
+                      order=['common', 'rare'], hue=point_hue, palette='gray',
+                      markers='.', linestyles='dashed', ax=axes[0])
+
+        sns.stripplot(data=df_agg[df_agg[Plot.REWARD_FACTOR] == 'non-reward'], x=Plot.TRANS_FACTOR,
+                      y='state1_stay_mean', s=5, marker="o", linewidth=0, alpha=.8, dodge=False,
+                      order=['common', 'rare'], hue=Plot.TRANS_FACTOR, palette=Plot.PALETTE, ax=axes[1])
+        sns.pointplot(data=df_agg[df_agg[Plot.REWARD_FACTOR] == 'non-reward'],
+                      x=Plot.TRANS_FACTOR, y='state1_stay_mean',
+                      order=['common', 'rare'], color='black', dodge=False, join=True, scale=2, errorbar='se',
+                      markers='X', linestyles='solid', ax=axes[1])
+        sns.pointplot(data=df_agg[df_agg[Plot.REWARD_FACTOR] == 'non-reward'],
+                      x=Plot.TRANS_FACTOR, y='state1_stay_mean',
+                      dodge=False, join=True,
+                      order=['common', 'rare'], hue=point_hue, palette='gray',
+                      markers='.', linestyles='dashed', ax=axes[1])
+
+        axes[0].set_ylim(0, 1.05)
+        axes[0].set_title('Reward')
+        axes[1].set_title('Non-Reward')
+        axes[0].get_legend().remove()
+        axes[1].get_legend().remove()
+
+        plt.show()
+    @staticmethod
+    def plot_response_time(df, model_name, combine=True, dep_var_suffix=''):
+        assert set(Plot.PLOT_FACTOR_VAR + ['state1_response_time' + dep_var_suffix, 'state2_response_time' + dep_var_suffix]).issubset(set(df.columns))
+        df = df.copy()
+        if df['state1_response_time' + dep_var_suffix].min() > 100:
+            df['state1_response_time' + dep_var_suffix] = df['state1_response_time' + dep_var_suffix] /1000
+            df['state2_response_time' + dep_var_suffix] = df['state2_response_time' + dep_var_suffix] / 1000
+        df['response_time' + dep_var_suffix] = df['state1_response_time' + dep_var_suffix] + df['state2_response_time' + dep_var_suffix]
+
+        if len(dep_var_suffix) > 0:
+            se = 'se'  # enable se
+        else:
+            se = None
+        if combine:
+            fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+            fig.suptitle('Summary: Response Time \n[%s]' % (model_name))
+            sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='response_time' + dep_var_suffix,
+                        hue=Plot.TRANS_FACTOR, errorbar=se,
+                        palette=Plot.PALETTE, alpha=.8,
+                        order=['reward', 'non-reward'],
+                        hue_order=['common', 'rare'],
+                        ax=ax)
+
+            for container in ax.containers:
+                ax.bar_label(container, fmt='%.2f', label_type='center')
+            ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
+            ax.legend(loc='lower right')
+            plt.show()
+        else:
+            fig, axes = plt.subplots(1, 2, figsize=(Plot.FIG_WIDTH * 2, Plot.FIT_HEIGHT))
+            fig.suptitle('Summary: Response time: [%s]' % (model_name))
+            sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='state1_response_time' + dep_var_suffix,
+                        hue=Plot.TRANS_FACTOR,
+                        order=['reward', 'non-reward'],
+                        hue_order=['common', 'rare'],
+                        palette=Plot.PALETTE, alpha=1, ax=axes[0])
+            sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='state2_response_time' + dep_var_suffix,
+                        hue=Plot.TRANS_FACTOR,
+                        order=['reward', 'non-reward'],
+                        hue_order=['common', 'rare'],
+                        palette=Plot.PALETTE, alpha=.5, ax=axes[1])
+            axes[0].set_title('state1')
+            axes[1].set_title('state2')
+            for ax in axes:
+                for container in ax.containers:
+                    ax.bar_label(container, fmt='%.2f', label_type='center')
+            axes[1].get_legend().remove()
+            plt.show()
+
+    @staticmethod
+    def plot_activation_trace(df1_atrace):
+        assert set(['count', ':Reference-Count', ':Activation']).issubset(set(df1_atrace.columns))
+        reward_colors = ['#F96666', '#FFD4D4'] * 4
+        frequency_colors = ['#3C4048', '#B2B2B2', '#B2B2B2', '#3C4048']
+
+        my_chunk_palette = sns.color_palette(frequency_colors + reward_colors)
+        chunk_order = df1_atrace['memory'].sort_values().unique()
+
+        fig, axes = plt.subplots(3, 1, figsize=(Plot.FIG_WIDTH, 4*Plot.FIT_HEIGHT), sharey=True, sharex=False)
+        fig.suptitle('Summary: ACT-R Memory Trace')
+        sns.barplot(data=df1_atrace, y='memory', x='count', order=chunk_order, palette=my_chunk_palette, ax=axes[0])
+        sns.barplot(data=df1_atrace, y='memory', x=':Reference-Count', order=chunk_order, palette=my_chunk_palette,
+                    ax=axes[1])
+        sns.barplot(data=df1_atrace, y='memory', x=':Activation', order=chunk_order, palette=my_chunk_palette,
+                    errorbar='se', ax=axes[2])
+
+        axes[0].set_title('Experiment Trial Count')
+        axes[1].set_title('ACTR Trace: :Retrieval-Count')
+        axes[2].set_title('ACTR Trace: :Activation')
+        plt.show()
+
+
+    @staticmethod
+    def plot_learning_performance(dfp, title):
+        """
+        Plot learning trajectory
+        :param dfr: cumulative reward
+        :param dfp: cumulative optimal response
+        :return:
+        """
+        assert set(['optimal_response_sum_prop', 'received_reward_sum_prop']).issubset(set(dfp.columns))
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+        fig.suptitle('Summary: [%s] Learning Performance (Cumulative)' %(title))
+        sns.lineplot(data=dfp, x='index', y='optimal_response_sum_prop',
+                     label='performance (cumulative)', color='steelblue', ax=ax)
+        sns.lineplot(data=dfp, x='index', y='received_reward_sum_prop',
+                     label='rewards (cumulative)', color='tomato', ax=ax)
+
+        ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
+        ax.set_ylim(0, 1)
+        plt.show()

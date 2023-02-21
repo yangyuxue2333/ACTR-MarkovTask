@@ -214,9 +214,8 @@
      status process
    
    =goal>
-     ; ucomment this line allow motivation updated based on previous reward value
-     ; otherwise motivation is fixed for each trial
-     ;motivation =R
+     ; motivation is fixed for each trial
+     ; motivation =R
       
    !eval! (trigger-reward 0) ; CLEAR REWARD  
    
@@ -310,11 +309,6 @@
    
    =visual>
    
-   ;=imaginal>
-   ;  curr-state =STATE
-   ;  left-stimulus  =L
-   ;  right-stimulus =R
-
    +imaginal>
      isa wm
      status process
@@ -324,9 +318,6 @@
      response nil
      next-state nil
      reward nil
-   
-   !output! (in attend-state1 =STATE =L =R)
-    
 )
 
 ;;; ----------------------------------------------------------------
@@ -1232,5 +1223,3 @@
    !stop!
 
 )
-
-;; (goal-focus start-trial)

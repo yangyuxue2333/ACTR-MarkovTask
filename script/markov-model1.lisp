@@ -225,8 +225,6 @@
     =goal>
       step       attend-stimulus
       stage      0
-      
-    ;!output! (in process-fixation())
 )
 
 ;;; ----------------------------------------------------------------
@@ -269,11 +267,6 @@
      stage      =STAGE
    
    =visual>
-   
-   ;=imaginal>
-   ;  curr-state =STATE
-   ;  left-stimulus  =L
-   ;  right-stimulus =R
 
    +imaginal>
      isa wm
@@ -284,10 +277,6 @@
      response nil
      next-state nil
      reward nil
-
-   
-   !output! (in attend-state1 =STATE =L =R)
-    
 )
 
 (p encode-state1
@@ -327,10 +316,6 @@
    =imaginal>
      next-state =STATE
      reward none
-   
-   ;-imaginal>
-   
-   !output! (in encode-state1 =L =R)
 )
 
 
@@ -366,7 +351,6 @@
      step       respond
    
    =visual>
-   !output! (in encode-state2 =L =R)
 )
 
 (p encode-state2
@@ -402,11 +386,7 @@
    
    -visual>
    
-   ;-imaginal>
-   
    !eval! (trigger-reward =REWARD)
-   
-   !output! (in  encode-state2 reward =REWARD)
 )
 
 
@@ -513,9 +493,6 @@
    
    =imaginal>
       response left
-   
-   !output! (in state1-left)
-  
 )
 
 (p choose-state1-right
@@ -556,9 +533,6 @@
    
    =imaginal>
       response right
-   
-   !output! (in state1-right)
-  
 )
 
 
@@ -603,9 +577,6 @@
    
    =imaginal>
       response left
-   
-   !output! (in state2-left())
-  
 )
 
 (p choose-state2-right
@@ -649,11 +620,7 @@
    
    =imaginal>
       response right
-   
-   !output! (in state2-left)
 )
-
-
 
 ;;; ----------------------------------------------------------------
 ;;; DONE
@@ -684,5 +651,3 @@
    !stop!
 
 )
-
-;; (goal-focus start-trial)

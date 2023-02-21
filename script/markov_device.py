@@ -1,5 +1,5 @@
 ## ================================================================ ##
-## MARKOV_DEVICE.PY                                                        ##
+## MARKOV_DEVICE.PY                                                 ##
 ## ================================================================ ##
 ## A simple ACT-R device for the MARKOV task                        ##
 ## -----------------------------------------                        ##
@@ -430,6 +430,7 @@ class MarkovACTR(MarkovState):
 
             # need to schedule event after loading models
             actr.schedule_event_now("detect-production-hook")
+            actr.schedule_event_now("detect-merge-hook")
 
         # init parameter sets
         self.actr_parameters = self.get_default_actr_parameters()
@@ -482,6 +483,8 @@ class MarkovACTR(MarkovState):
 
         actr.add_command("markov-update-reward-probability", self.update_random_walk_reward_probabilities, "Update reward probability: before state0")
         actr.add_command("detect-production-hook", self.cycle_hook_func, "define cycle_hook_func func")
+        actr.add_command("detect-merge-hook", self.chunk_merge_hook_func, "define chunk_merge_hook_func func")
+        #chunk_merge_hook_func
 
 
     def remove_actr_commands(self):
@@ -494,6 +497,7 @@ class MarkovACTR(MarkovState):
 
         actr.remove_command("markov-update-reward-probability")
         actr.remove_command("detect-production-hook")
+        actr.remove_command("detect-merge-hook")
 
     def respond_to_key_press(self, model, key):
         self.response = key
@@ -694,6 +698,7 @@ class MarkovACTR(MarkovState):
             if production_name.startswith('ENCODE-STATE'):
                 self.offset = actr.mp_time()
                 # print('\toffset', self.offset, production_name)
+                # print('\tresposne time', self.response_time)
                 if self.markov_state.state == 1:
                     self.markov_state.state1_response_time = self.response_time
                 if self.markov_state.state == 3:
@@ -701,8 +706,61 @@ class MarkovACTR(MarkovState):
 
                     # save trial information
                     self.log_trial()
+
+            if production_name.startswith('PLAN'):
+                # only enable simulate_retrieval_func if runing markov-model2-6
+                if self.model == 'markov-model2-6':
+                    retrieved_chunk = self.simulate_retrieval_func(production_name)
         except:
             pass
+
+    def simulate_retrieval_func(self, production_name):
+        """
+        When PLAN-BACKWARD-* production fires, a memory retrieval simulation will start
+        The retrieved chunk will help to decide next state
+
+        Only enable if self.model == 'markov-model2-6'
+
+        This function allows retrieval simulation does not mess up with real event memory
+        :param production_name:
+        :return:
+        """
+        if not self.verbose:
+            actr.hide_output()
+        if production_name == 'PLAN-BACKWARD-AT-STAGE1-STATE2':
+            retrieved_chunk = actr.simulate_retrieval_request('isa', 'wm',
+                                'status', 'process',
+                                'next-state', 'none',
+                                ':recently-retrieved', 'nil',
+                                '>', 'reward', '0')[0]
+            actr.mod_chunk('START-TRIAL-0',
+                           'plan-state2', actr.chunk_slot_value(retrieved_chunk, 'curr-state'),
+                           'plan-state2-response', actr.chunk_slot_value(retrieved_chunk, 'response'))
+
+        if production_name == 'PLAN-BACKWARD-AT-STAGE1-STATE1':
+            retrieved_chunk = actr.simulate_retrieval_request('isa', 'wm',
+                                'status', 'process',
+                                'curr-state', 'A')[0]
+            actr.mod_chunk('START-TRIAL-0',
+                           'plan-state1', actr.chunk_slot_value(retrieved_chunk, 'curr-state'),
+                           'plan-state1-response', actr.chunk_slot_value(retrieved_chunk, 'response'))
+
+        if production_name == 'PLAN-BACKWARD-AT-STAGE2':
+            # get access to imaginal buffer's current state
+            curr_state = self.markov_state.state2_stimuli[0].text[0]
+            retrieved_chunk = actr.simulate_retrieval_request('isa', 'wm',
+                                'status', 'process',
+                                'curr-state', curr_state,
+                                'next-state', 'none',
+                                '>', 'reward', '0')[0]
+            actr.mod_chunk('START-TRIAL-0',
+                           'plan-state2-response', actr.chunk_slot_value(retrieved_chunk, 'response'))
+        actr.unhide_output()
+        return retrieved_chunk
+
+
+    def chunk_merge_hook_func(self, *params):
+        pass
 
     def log_trial(self):
         """

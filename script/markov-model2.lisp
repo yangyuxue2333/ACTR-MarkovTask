@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model2.lisp
-;;; Version     :v2.3
+;;; Version     :v2.4
 ;;;
 ;;; Description : model-base 
 ;;;
@@ -25,6 +25,9 @@
 ;;;
 ;;; To do       :
 ;;;
+;;;
+;;; v key updates: use encoding, rather than retrieval in memory refresh
+;;;    refresh all trial memories
 ;;;
 ;;; ----- History -----
 ;;;
@@ -162,8 +165,8 @@
       updated-motivation            ;;; mental counts
       time-onset                    ;;; mental clock
       time-duration                 ;;; mental clock
-      current-reward                ;;; current reward given
-      previous-reward)              ;;; previous reward given
+      current-reward                ;;; reward received in current trial
+      previous-reward)              ;;; reward received in previous trial
 
 
 
@@ -195,7 +198,6 @@
      step     attend-stimulus 
      time-onset =TIME
      previous-reward =R
-     ;motivation 10
 ==>
    +imaginal>
      isa wm
@@ -203,10 +205,8 @@
    
    *goal>
      motivation =R
-      
-   
-   !eval! (trigger-reward 0) ; CLEAR REWARD  
-   !output! (TIME =TIME R =R)
+
+   !eval! (trigger-reward 0) ; CLEAR REWARD
 )
 
 (p find-screen
@@ -248,9 +248,7 @@
       ; INIT MOT (keep track of discounted motivation)
       updated-motivation  =MOT  
       time-onset =TIME
-   
-   !output! (in process-fixation time-onset =TIME updated-motivation =MOT)
-)
+  )
 
 ;;; ----------------------------------------------------------------
 ;;; ATTEND MARKOV STIMULUS
@@ -292,11 +290,6 @@
      stage      =STAGE
    
    =visual>
-   
-   ;=imaginal>
-   ;  curr-state =STATE
-   ;  left-stimulus  =L
-   ;  right-stimulus =R
 
    +imaginal>
      isa wm
@@ -307,9 +300,6 @@
      response nil
      next-state nil
      reward nil
-   
-   !output! (in attend-state1 =STATE =L =R)
-    
 )
 
 ;;; ----------------------------------------------------------------
@@ -363,15 +353,11 @@
         status process
         > reward 0
         next-state none
-        :recently-retrieved nil       
+        :recently-retrieved nil
    
    =imaginal>
-   
    =goal>
-   
    =visual>
-
-   !output! (plan-backward-state2)
 )
 
 (p plan-backward-at-stage1-state1
@@ -411,7 +397,7 @@
         curr-state A
         reward none
         next-state =CURR
-        :recently-retrieved nil       
+        :recently-retrieved nil
    
    =imaginal>
    
@@ -420,7 +406,7 @@
    =goal>
        plan-state2 =CURR
 
-   !output! (plan-backward-state1 STATE2 IS =CURR)
+   !output! (plan1-1 retrieved S2 =CURR)
 )
 
 
@@ -452,6 +438,7 @@
         isa wm
         status process
         curr-state A
+        next-state =NEXT
         reward none
         response =RESP
 
@@ -469,10 +456,13 @@
    
    =visual>
    
-   !output! (plan-backward-complete STATE1 RESP =RESP)
+   !output! (plan1-2 response =RESP retrieved S2 =NEXT)
 )
 
-
+;;; ----------------------------------------------------------------
+;;; ENCODE STATE1
+;;; ----------------------------------------------------------------
+;;; ----------------------------------------------------------------
 
 (p encode-state1
    "Encodes the STATE2 stimulus in WM"
@@ -511,8 +501,6 @@
    =imaginal>
      next-state =STATE
      reward none
-      
-   !output! (in encode-state1 =L =R)
 )
 
 
@@ -549,8 +537,6 @@
      plan-state2 nil
    
    =visual>
-   
-   !output! (in attend-state2 =L =R)
 )
 
 (p plan-backward-at-stage2
@@ -585,16 +571,13 @@
         curr-state =CURR
         > reward 0
         next-state none
-        :recently-retrieved nil       
-   
+
    =imaginal>
    
    =goal>
        plan-state2 =CURR
    
    =visual>
-
-   !output! (plan-backward-at-stage2)
 )
 
  (p plan-backward-at-stage2-complete
@@ -612,6 +595,7 @@
    
    =imaginal>
        - curr-state nil
+       curr-state =CURR
        response nil
        next-state nil
    
@@ -624,7 +608,6 @@
         isa wm
         status process 
         response =RESP
-
 ==>
    
    =goal> 
@@ -638,8 +621,8 @@
    -retrieval>
    
    =visual>
-   
-   !output! (plan-backward-complete-state2 =RESP)
+
+   !output! (PLAN2 REAL curr-state =CURR response =RESP)
 )
 
 
@@ -678,8 +661,6 @@
    -visual>
       
    !eval! (trigger-reward =REWARD)
-   
-   !output! (in  encode-state2 reward =REWARD)
 )
 
 ;;; ----------------------------------------------------------------
@@ -689,7 +670,7 @@
 ;;; ----------------------------------------------------------------
 
 (p refresh-memory
-  "refresh memorty  !!!update: no longer retrieve, but encode "
+  "refresh memory: harvesting imaginal buffer"
    ?imaginal>
      state free
      buffer full
@@ -713,11 +694,10 @@
 ==>
    
    =goal>
-    ; step  refresh-memory  ; infinite refresh
     step  refresh-success  ; one-time refresh
    
    =imaginal>
-   
+
    +imaginal>
        isa wm
        status  PROCESS
@@ -727,7 +707,6 @@
        curr-state  =CURR
        next-state  =NEXT
        response  =RESP
-       ; :recently-retrieved reset
 )
 
 (p refresh-success
@@ -738,19 +717,14 @@
    
    ?retrieval>
      state free
-     ; buffer full
 
    =goal>
      step  refresh-success
-   
-==> 
-   
+==>
    =goal>
-    step attend-stimulus 
-   
-   -imaginal>
+    step attend-stimulus
 
-   -retrieval>
+   -imaginal>
  )
 
 ;;; ----------------------------------------------------------------
@@ -798,9 +772,7 @@
    =visual>
    
    =goal>
-     step       encode-stimulus 
-
-   !output! (in choose-state1-left)
+     step       encode-stimulus
 )
 
 
@@ -840,9 +812,7 @@
    =visual>
    
    =goal>
-     step       encode-stimulus 
-
-   !output! (in choose-planed-state1-right)  
+     step       encode-stimulus
 )
 
 
@@ -888,9 +858,6 @@
    
    =imaginal>
       response left
-   
-   !output! (in choose-state2-plan-left)
-  
 )
 
 (p choose-state2-right
@@ -935,9 +902,6 @@
    
    =imaginal>
       response right
-   
-   !output! (in choose-state2-plan-right)
-  
 )
 
 ;;; ----------------------------------------------------------------
@@ -969,5 +933,3 @@
    !stop!
 
 )
-
-;; (goal-focus start-trial)
