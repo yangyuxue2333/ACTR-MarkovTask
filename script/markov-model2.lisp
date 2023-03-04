@@ -48,17 +48,21 @@
 ;;; - At state 0: a "+" appears on the screen and prepare WM. 
 ;;; - At stage 1: display a pair of Markov Stimli; attend stimuli pair, 
 ;;;   - Planing: backward planing method
-;;;     - PLAN-BACKWARD-AT-STAGE1-STATE2
-;;;     - PLAN-BACKWARD-AT-STAGE1-STATE2
+;;;     - PLAN-BACKWARD-AT-STAGE1-START
+;;;     - PLAN-BACKWARD-AT-STAGE1-BLEND-B
+;;;     - PLAN-BACKWARD-AT-STAGE1-BLEND-C
+;;;         - PLAN-BACKWARD-AT-STAGE1-CHOOSE-B
+;;;         - PLAN-BACKWARD-AT-STAGE1-CHOOSE-C
+;;;     - PLAN-BACKWARD-AT-STAGE1-RETRIEVE-RESPONSE
 ;;;     - PLAN-BACKWARD-AT-STAGE1-COMPLETE
-;;;   choose action based on planning, encode stimulus, finally refresh memory
+;;;   choose action based on planning, encode stimulus, DO NOT refresh memory NOW
 ;;; 
 ;;; - At stage 2: a pair of Markov Stimli; attend stimuli pair
 ;;;   Four productions compete: choose-left(), choose-right(),
 ;;;   dont-choose-left(), dont-choose-right().
 ;;;   Agent makes response L or R 
 ;;;   - Planing: backward planing method
-;;;     - PLAN-BACKWARD-AT-STAGE2-STATE2 
+;;;     - PLAN-BACKWARD-AT-STAGE2-STATE2-RETRIEVE-RESPONSE 
 ;;;     - PLAN-BACKWARD-AT-STAGE2-COMPLETE
 ;;;   choose action based on planning, encode stimulus, finally refresh memory
 ;;;
@@ -95,25 +99,27 @@
 ;;; P PROCESS-FIXATION()
 ;;; ===== STATE1 =====
 ;;; P ATTEND-STATE1()
-;;; P PLAN-STATE1 ()  
-;;; |--------- P PLAN-BACKWARD-AT-STAGE1-STATE2()
-;;; |--------- P PLAN-BACKWARD-AT-STAGE1-STATE1()
+;;; P PLAN-BACKWARD-AT-STAGE1-START ()  
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-BLEND-B()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-BLEND-C()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-CHOOSE-B()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-CHOOSE-C()
+;;; |--------- P PLAN-BACKWARD-AT-STAGE1-RETRIEVE-RESPONSE()
 ;;; |--------- P PLAN-BACKWARD-AT-STAGE1-COMPLETE()
 ;;; |--------- P CHOOSE-STATE1-LEFT()
 ;;; |--------- P CHOOSE-STATE1-RIGHT()
 ;;; P ENCODE-STATE1()
-;;; P REFRESH-MEMORY() 
-;;; P REFRESH-MEMORY-SUCCESS()
 ;;; ===== STATE2 =====
-;;; P ENCODE-STATE2-STIMULUS ()  
-;;; P PLAN-STATE2 ()  
-;;; |--------- P PLAN-BACKWARD-AT-STAGE2()
+;;; P ATTEND-STATE2 ()   
+;;; |--------- P PLAN-BACKWARD-AT-STAGE2-RETRIEVE-RESPONSE ()
 ;;; |--------- P PLAN-BACKWARD-AT-STAGE2-COMPLETE()
 ;;; |--------- P CHOOSE-STATE2-LEFT()
 ;;; |--------- P CHOOSE-STATE2-RIGHT() 
 ;;; ===== REWARD =====
 ;;; P ENCODE-STATE2() 
 ;;; P REFRESH-MEMORY() 
+;;; |--------- ENCODE STATE2 CURR-STATE C RESPONSE LEFT REWARD 1
+;;; |--------- ENCODE STATE1 CURR-STATE A NEXT-STATE C RESPONSE RIGHT REWARD 1
 ;;; P REFRESH-MEMORY-SUCCESS()
 ;;; P DONE()
 ;;;;
@@ -317,15 +323,18 @@
 ;;; PLAN (BACKWARD-BLENDING)
 ;;; ----------------------------------------------------------------
 ;;; planing: stage1-state2
-;;;;;; BLEND-STATE-B
-;;;;;; BLEND-STATE-C
-;;;;;; if: BLEND-VALUE-B > BLEND-VALUE-C: CHOOSE-B
-;;;;;; else: CHOOSE-C
-;;; planing: stage1-state1
-;;;;;; RETRIEVE-RESPONSE: retrieve the response that mostly likely
-;;;;;; leading to best-state
+;;;     BLEND-STATE-B
+;;;     BLEND-STATE-C
+;;; if: BLEND-VALUE-B > BLEND-VALUE-C: CHOOSE-B
+;;; else: CHOOSE-C
+;;;     planing: stage1-state1
+;;;     RETRIEVE-RESPONSE: retrieve the response that mostly likely
+;;;     leading to best-state
 ;;; ----------------------------------------------------------------
-
+;;; ----------------------------------------------------------------
+;;; PLAN STATE1
+;;; ----------------------------------------------------------------
+;;; ----------------------------------------------------------------
 (p plan-backward-at-stage1-start
    "Plan backward at stage1: state2"
    ?blending>
@@ -602,126 +611,9 @@
 )
 
 ;;; ----------------------------------------------------------------
-;;; ENCODE STATE1
+;;; PLAN STATE2
 ;;; ----------------------------------------------------------------
 ;;; ----------------------------------------------------------------
-
-(p encode-state1
-   "Encodes the STATE2 stimulus in WM"
-   =visual>
-     kind MARKOV-STIMULUS
-     stage 2
-     stage =STAGE
-     state =STATE
-     left-stimulus  =L
-     right-stimulus =R
-     
-   =imaginal>
-     status process 
-     - curr-state nil
-     - response nil
-     next-state nil
-     reward nil
-
-   ?retrieval>
-     state free
-     buffer empty
-   
-   ?manual> 
-     state free
-
-   =goal>
-     isa        phase
-     step       encode-stimulus 
-==>
-   =goal> 
-     ; do not refresh state1
-     step       attend-stimulus ;refresh-memory 
-     stage      =STAGE
-   
-   =visual>
-   -imaginal>
-   
-   ; =imaginal>
-   ;   next-state =STATE
-   ;   reward none 
-)
-
-
-(p attend-state2
-  =visual>
-     kind MARKOV-STIMULUS
-     stage 2
-     stage =STAGE
-     state =STATE
-     left-stimulus  =L
-     right-stimulus =R
-   
-   =goal> 
-     step       attend-stimulus
-     stage      =STAGE
-   
-   ?imaginal>
-     state free
-     buffer empty
-   
-==> 
-   +imaginal>
-     isa wm
-     status process
-     curr-state =STATE
-     left-stimulus  =L
-     right-stimulus =R
-     response nil
-     next-state nil
-     reward nil
-   
-   =goal>
-     step       plan-retrieve 
-     plan-state2 nil
-   
-   =visual>
-)
-
-; (p plan-backward-at-stage2
-;    "Plan backward at stage2"
-;    ?blending>
-;         state free
-   
-;    ?goal>
-;        state free
-   
-;    =visual>
-;      kind MARKOV-STIMULUS
-;      stage 2
-
-;    =imaginal>
-;        status process
-;        - curr-state nil
-;        curr-state =CURR
-;        response nil
-;        next-state nil
-;        reward nil
-   
-;    =goal>
-;        isa phase
-;        step plan
-;        plan-state2 nil
-; ==> 
-;    +blending>
-;         isa wm
-;         status process
-;         curr-state =CURR
-;         > reward 0
-;         next-state none
-
-;    =imaginal>
-   
-;    =goal>
-;        plan-state2 =CURR
-   
-;    =visual>
-; )
 (p plan-backward-at-stage2-retrieve-response
     "Plan backward at stage2"
     =visual>
@@ -812,6 +704,87 @@
    !output! (PLAN2 REAL curr-state =CURR response =RESP)
 )
 
+;;; ----------------------------------------------------------------
+;;; ENCODE STATE1
+;;; ----------------------------------------------------------------
+;;; ----------------------------------------------------------------
+
+(p encode-state1
+   "Encodes the STATE2 stimulus in WM"
+   =visual>
+     kind MARKOV-STIMULUS
+     stage 2
+     stage =STAGE
+     state =STATE
+     left-stimulus  =L
+     right-stimulus =R
+     
+   =imaginal>
+     status process 
+     - curr-state nil
+     - response nil
+     next-state nil
+     reward nil
+
+   ?retrieval>
+     state free
+     buffer empty
+   
+   ?manual> 
+     state free
+
+   =goal>
+     isa        phase
+     step       encode-stimulus 
+==>
+   =goal> 
+     ; do not refresh state1
+     step       attend-stimulus ;refresh-memory 
+     stage      =STAGE
+   
+   =visual>
+   -imaginal>
+   
+   ; =imaginal>
+   ;   next-state =STATE
+   ;   reward none 
+)
+
+
+(p attend-state2
+  =visual>
+     kind MARKOV-STIMULUS
+     stage 2
+     stage =STAGE
+     state =STATE
+     left-stimulus  =L
+     right-stimulus =R
+   
+   =goal> 
+     step       attend-stimulus
+     stage      =STAGE
+   
+   ?imaginal>
+     state free
+     buffer empty
+   
+==> 
+   +imaginal>
+     isa wm
+     status process
+     curr-state =STATE
+     left-stimulus  =L
+     right-stimulus =R
+     response nil
+     next-state nil
+     reward nil
+   
+   =goal>
+     step       plan-retrieve 
+     plan-state2 nil
+   
+   =visual>
+)
 
 
 (p encode-state2
@@ -893,7 +866,7 @@
        curr-state  A
        next-state  =CURR
        response  =RESP1
-    !output! (encode state2 curr-state A next-state  =CURR response  =RESP1 reward =R)
+    !output! (encode state1 curr-state A next-state  =CURR response  =RESP1 reward =R)
 )
 
 (p refresh-success
@@ -1120,3 +1093,34 @@
    !stop!
 
 )
+
+;      0.050   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+;      1.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      1.185   PROCEDURAL             PRODUCTION-FIRED PROCESS-FIXATION
+;      2.135   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      2.270   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE1
+;      2.320   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-START
+;      2.392   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-BLEND-B
+; STATE B BLENDED REWARD IS 0.8495723
+;      2.466   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-BLEND-C
+; STATE C BLENDED REWARD IS 0.90521216
+;      2.516   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-CHOOSE-C
+;      2.566   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-RETRIEVE-RESPONSE
+;      2.630   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-COMPLETE
+;      2.680   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE1-RIGHT
+;      2.940   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      3.075   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE1
+;      3.125   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE2
+;      3.375   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE2-RETRIEVE-RESPONSE
+;      3.509   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE2-COMPLETE
+; PLAN2 REAL CURR-STATE C RESPONSE LEFT
+;      3.559   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE2-LEFT
+;      3.769   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      3.904   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE2
+;      3.954   PROCEDURAL             PRODUCTION-FIRED REFRESH-MEMORY
+; ENCODE STATE2 CURR-STATE C RESPONSE LEFT REWARD 1
+; ENCODE STATE1 CURR-STATE A NEXT-STATE C RESPONSE RIGHT REWARD 1
+;      4.204   PROCEDURAL             PRODUCTION-FIRED REFRESH-SUCCESS
+;      4.254   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+;     80.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;     80.185   PROCEDURAL             PRODUCTION-FIRED DONE
