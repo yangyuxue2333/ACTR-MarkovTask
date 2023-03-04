@@ -73,13 +73,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (clear-all)
+(require-extra "blending")
+
 (define-model markov-model
     (sgp ;;; ----------------- ACTIVATION PARAMETER -----------------
          :ans 0.2
          :lf 0.5     ; latency factor: if 0 ;immediately retrieve memory (higher activation, retrieve faster)
          :bll 0.5    ; enable base-level learning, decay rate
-         :mas 2
-         :rt -5  ;retrieval threshold
+         :mp 10
+         :rt -5      ; retrieval threshold
          ;:imaginal-activation 3.0
          ;;; ----------------- UTILITY PARAMETER-----------------
          :ul t
@@ -102,12 +104,12 @@
          :v nil
          :ncnar t ;normalize chunk names after run
          :model-warnings nil
+         ;:blt t
          ;:trace-detail low
          ;:ult t
          ;:act t
          :trace-filter production-firing-only
          ;:pct t
          ;:blt t
-
     )
 )

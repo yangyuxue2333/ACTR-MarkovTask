@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model2.lisp
-;;; Version     :v2.4
+;;; Version     :v2.8
 ;;;
 ;;; Description : model-base 
 ;;;
@@ -26,8 +26,7 @@
 ;;; To do       :
 ;;;
 ;;;
-;;; v key updates: use encoding, rather than retrieval in memory refresh
-;;;    refresh all trial memories
+;;; v key updates: use blending
 ;;;
 ;;; ----- History -----
 ;;;
@@ -145,7 +144,7 @@
       stage
       reward)
 
-(chunk-type wm    
+(chunk-type wm
       status
       curr-state
       left-stimulus
@@ -166,9 +165,17 @@
       time-onset                    ;;; mental clock
       time-duration                 ;;; mental clock
       current-reward                ;;; reward received in current trial
-      previous-reward)              ;;; reward received in previous trial
+      previous-reward               ;;; reward received in previous trial
+      ;;; blending
+      state-b-blended-value         ;;; 
+      state-c-blended-value         ;;;
+      diff-blended-value            ;;; state-b-blended-value - state-c-blended-value
+      best-blended-state            ;;; "B" or "C"
+)
 
-
+(chunk-type response
+    (response-type t)
+    action)
 
 ;;; --------- DM ---------
 ;;; ------------------------------------------------------------------
@@ -200,9 +207,15 @@
      previous-reward =R
 ==>
    +imaginal>
-     isa wm
-     status process
-   
+        isa wm
+        status prepare
+        curr-state nil
+        left-stimulus nil
+        right-stimulus nil
+        next-state nil
+        response nil
+        reward nil
+
    *goal>
      motivation =R
 
@@ -235,6 +248,8 @@
    
     ?imaginal>
       state    free
+
+    =imaginal>
    
     =goal>
      isa        phase
@@ -248,6 +263,9 @@
       ; INIT MOT (keep track of discounted motivation)
       updated-motivation  =MOT  
       time-onset =TIME
+
+    =imaginal>
+      status process
   )
 
 ;;; ----------------------------------------------------------------
@@ -272,7 +290,7 @@
      
 
    =imaginal>
-     status process 
+     status process
      curr-state nil
      left-stimulus nil
      right-stimulus nil
@@ -291,44 +309,29 @@
    
    =visual>
 
-   +imaginal>
-     isa wm
-     status process
-     curr-state =STATE
-     left-stimulus  =L
-     right-stimulus =R
-     response nil
-     next-state nil
-     reward nil
+   =imaginal>
+    curr-state =STATE
 )
 
 ;;; ----------------------------------------------------------------
-;;; PLAN (BACKWARD)
+;;; PLAN (BACKWARD-BLENDING)
 ;;; ----------------------------------------------------------------
-;;; Plan state2, 
-;; +retrieval>
-;;      isa wm
-;;      outcome 2
-;;      next-state nil ;; to ensure this is Stage 2
-;;; Plan state1,
-;;; ...
-;;    =retrieval>
-;;       isa wm
-;;       outcome 2
-;;       next-state nil  ;; to ensure this is stage 2!
-;;       state =TARGET
-;; ==>
-;;    ...
-;;    +retrieval>
-;;       isa wm
-;;       state A
-;;       next-state =TARGET
+;;; planing: stage1-state2
+;;;;;; BLEND-STATE-B
+;;;;;; BLEND-STATE-C
+;;;;;; if: BLEND-VALUE-B > BLEND-VALUE-C: CHOOSE-B
+;;;;;; else: CHOOSE-C
+;;; planing: stage1-state1
+;;;;;; RETRIEVE-RESPONSE: retrieve the response that mostly likely
+;;;;;; leading to best-state
 ;;; ----------------------------------------------------------------
-(p plan-backward-at-stage1-state2
+
+(p plan-backward-at-stage1-start
    "Plan backward at stage1: state2"
-   ?retrieval>
+   ?blending>
         state free
         buffer empty
+        error nil
    
    ?goal>
        state free
@@ -348,115 +351,254 @@
        plan-state1 nil
        plan-state2 nil
 ==> 
-   +retrieval>
+    =goal>
+        step plan-blend
+    +blending>
         isa wm
-        status process
-        > reward 0
-        next-state none
-        :recently-retrieved nil
-   
+        curr-state B
+        :ignore-slots (STATUS RESPONSE NEXT-STATE LEFT-STIMULUS RIGHT-STIMULUS)
+
    =imaginal>
    =goal>
    =visual>
 )
 
-(p plan-backward-at-stage1-state1
-   "Plan backward at stage1: state1"
-   ?retrieval>
+(p plan-backward-at-stage1-blend-b
+     =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+     
+     ?blending>
+       state free
+
+     ?imaginal>
+        state free 
+        buffer full
+
+     ?goal>
+        state free 
+    =goal>
+        isa phase
+        step plan-blend
+        state-b-blended-value nil
+        state-c-blended-value nil
+
+    =blending>
+       isa wm
+       reward =val 
+       curr-state =s
+
+
+  ==>
+   !output! (state =s blended reward is =val)
+
+   ; Overwrite the blended chunk to erase it and keep it
+   ; from being added to dm.  Not necessary, but keeps the
+   ; examples simpler.
+
+   @blending>
+
+   +blending>
+     isa wm
+     curr-state C  
+     :ignore-slots (STATUS RESPONSE NEXT-STATE LEFT-STIMULUS RIGHT-STIMULUS)
+
+   =goal>
+      state-b-blended-value =val
+
+   =visual>
+)
+
+(p plan-backward-at-stage1-blend-c
+     =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+         
+     ?blending>
+       state free
+
+     ?imaginal>
+        state free 
+        buffer full
+
+     ?goal>
+        state free
+
+     =blending>
+       isa wm
+       reward =c
+       curr-state =s
+        
+
+     =goal>
+        isa phase
+        step plan-blend
+        - state-b-blended-value nil
+        state-c-blended-value nil
+        state-b-blended-value =b
+    
+     ==>
+     
+     !output! (state =s blended reward is =c)
+
+     ; Overwrite the blended chunk to erase it and keep it
+     ; from being added to dm.  Not necessary, but keeps the
+     ; examples simpler.
+
+     @blending>
+
+     =visual>
+        
+     
+    !bind! =diff(- =b =c)
+
+    =goal>
+        step plan-evaluate 
+        state-c-blended-value =c
+        diff-blended-value =diff
+  )
+
+(p plan-backward-at-stage1-choose-b 
+    =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+
+    ?imaginal>
+        state free 
+        buffer full
+
+    ?goal>
         state free
         buffer full
-   
-   ?goal>
-       state free
-   
-   =visual>
-     kind MARKOV-STIMULUS
-     stage 1
-   
-   =imaginal>
-       - curr-state nil
-       respond nil
-       next-state nil
-   
-   =goal>
-       isa phase
-       step plan
-       plan-state1 nil
-       plan-state2 nil
-   
-   =retrieval>
-        isa wm
-        status process
-        curr-state =CURR
+    =goal>
+        isa phase
+        step plan-evaluate
+        >= diff-blended-value 0
+ 
 ==> 
-   -retrieval>
    
-   +retrieval>
-        isa wm
-        status process
-        curr-state A
-        reward none
-        next-state =CURR
-        :recently-retrieved nil
-   
-   =imaginal>
+   =goal> 
+        step plan-retrieve  
+        plan-state2 B
+        best-blended-state  B
    
    =visual>
+       
+  )
+
+
+(p plan-backward-at-stage1-choose-c 
+    =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+
+    ?imaginal>
+        state free 
+        buffer full
+
+    ?goal>
+        state free
+        buffer full
+
+    =goal>
+        isa phase
+        step plan-evaluate
+        <= diff-blended-value 0
+ 
+==> 
    
-   =goal>
-       plan-state2 =CURR
+   =goal> 
+        step plan-retrieve 
+        plan-state2 C
+        best-blended-state C
 
-   !output! (plan1-1 retrieved S2 =CURR)
+   =visual>        
+  )
+
+(p plan-backward-at-stage1-retrieve-response
+    =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+
+  ?retrieval>
+        state free 
+        buffer empty
+
+  ?imaginal>
+        state free 
+        buffer full
+
+  ?goal>
+      state free
+      buffer full 
+  =goal>
+      isa phase
+      step plan-retrieve
+      - best-blended-state  nil
+      best-blended-state  =best-blended-state 
+ 
+==> 
+  ; retrieve the response that leads to next-state = best-blended state
+  +retrieval> 
+      isa wm
+      next-state  =best-blended-state 
+      > reward 0
+  
+  =visual>
+  =goal> 
+        step plan-complete
 )
-
 
 (p plan-backward-at-stage1-complete
    "Plan until state1"
-   ?retrieval>
-        state free
-        buffer full
-   
-   ?goal>
-       state free
-   
    =visual>
-     kind MARKOV-STIMULUS
-     stage 1
-   
-   =imaginal>
+         kind MARKOV-STIMULUS
+         stage 1
+   ?retrieval>
+        state free 
+        buffer full
+    ?imaginal>
+        state free 
+        buffer full
+    ?blending>
+       state free
+
+    ?goal>
+        state free 
+    =retrieval>
+        response =RESP
+
+    =imaginal>
        - curr-state nil
        response nil
        next-state nil
    
    =goal>
        isa phase
-       step plan
+       step plan-complete
        plan-state1 nil
        - plan-state2 nil
-   
-   =retrieval>
-        isa wm
-        status process
-        curr-state A
-        next-state =NEXT
-        reward none
-        response =RESP
-
+       - best-blended-state  nil
+       best-blended-state  =best-blended-state 
 ==>
-   
    =goal> 
        step respond
+       ; reset goal blended values
        plan-state1 nil
        plan-state2 nil
+       state-b-blended-value nil
+       state-c-blended-value nil
+       plan-state1-response =RESP
    
    =imaginal>
        response =RESP
    
    -retrieval>
+   -blending>
    
    =visual>
    
-   !output! (plan1-2 response =RESP retrieved S2 =NEXT)
+   ; !output! (plan1-2 response =RESP retrieved S2 =NEXT)
 )
 
 ;;; ----------------------------------------------------------------
@@ -493,14 +635,16 @@
      step       encode-stimulus 
 ==>
    =goal> 
-     step       refresh-memory 
+     ; do not refresh state1
+     step       attend-stimulus ;refresh-memory 
      stage      =STAGE
    
    =visual>
+   -imaginal>
    
-   =imaginal>
-     next-state =STATE
-     reward none
+   ; =imaginal>
+   ;   next-state =STATE
+   ;   reward none 
 )
 
 
@@ -533,51 +677,95 @@
      reward nil
    
    =goal>
-     step       plan 
+     step       plan-retrieve 
      plan-state2 nil
    
    =visual>
 )
 
-(p plan-backward-at-stage2
-   "Plan backward at stage2"
-   ?retrieval>
-        state free
-        buffer empty
+; (p plan-backward-at-stage2
+;    "Plan backward at stage2"
+;    ?blending>
+;         state free
    
-   ?goal>
-       state free
+;    ?goal>
+;        state free
    
-   =visual>
-     kind MARKOV-STIMULUS
-     stage 2
+;    =visual>
+;      kind MARKOV-STIMULUS
+;      stage 2
 
-   =imaginal>
+;    =imaginal>
+;        status process
+;        - curr-state nil
+;        curr-state =CURR
+;        response nil
+;        next-state nil
+;        reward nil
+   
+;    =goal>
+;        isa phase
+;        step plan
+;        plan-state2 nil
+; ==> 
+;    +blending>
+;         isa wm
+;         status process
+;         curr-state =CURR
+;         > reward 0
+;         next-state none
+
+;    =imaginal>
+   
+;    =goal>
+;        plan-state2 =CURR
+   
+;    =visual>
+; )
+(p plan-backward-at-stage2-retrieve-response
+    "Plan backward at stage2"
+    =visual>
+     kind MARKOV-STIMULUS
+     stage 2 
+
+  ?retrieval>
+        state free 
+        buffer empty
+
+  ?imaginal>
+        state free 
+        buffer full
+
+  ?goal>
+      state free
+      buffer full 
+
+  =imaginal>
        status process
        - curr-state nil
        curr-state =CURR
        response nil
        next-state nil
        reward nil
-   
-   =goal>
-       isa phase
-       step plan
-       plan-state2 nil
-==> 
-   +retrieval>
-        isa wm
-        status process
-        curr-state =CURR
-        > reward 0
-        next-state none
 
-   =imaginal>
-   
-   =goal>
-       plan-state2 =CURR
-   
-   =visual>
+  =goal>
+      isa phase
+      step plan-retrieve
+      plan-state2 nil
+      
+==> 
+  ; retrieve the response that leads to next-state = best-blended state
+  =goal> 
+        step plan-complete
+        plan-state2 =CURR
+  +retrieval> 
+      isa wm
+      curr-state  =CURR
+      > reward 0
+
+  =imaginal>
+  =visual>
+  
 )
 
  (p plan-backward-at-stage2-complete
@@ -591,7 +779,7 @@
    
    =visual>
      kind MARKOV-STIMULUS
-     stage 2
+     stage 2 
    
    =imaginal>
        - curr-state nil
@@ -601,7 +789,7 @@
    
    =goal>
        isa phase
-       step plan
+       step plan-complete
        - plan-state2 nil
    
    =retrieval>
@@ -619,7 +807,6 @@
        response =RESP
    
    -retrieval>
-   
    =visual>
 
    !output! (PLAN2 REAL curr-state =CURR response =RESP)
@@ -656,7 +843,7 @@
    
    =imaginal>
      reward    =REWARD
-     next-state none
+     ;next-state none
    
    -visual>
       
@@ -681,32 +868,32 @@
    
    =goal>
      step  refresh-memory
+     plan-state1-response  =RESP1
    
    =imaginal>
        status  PROCESS
-       left-stimulus  =LEFT
-       right-stimulus  =RIGHT
        reward  =R
        curr-state  =CURR
-       next-state  =NEXT
        response  =RESP
    
 ==>
-   
+   !output! (encode state2 curr-state  =CURR response  =RESP reward  =R)
    =goal>
     step  refresh-success  ; one-time refresh
-   
-   =imaginal>
 
+   -imaginal>
+
+   ;;; encode state1 memory
    +imaginal>
        isa wm
        status  PROCESS
-       left-stimulus  =LEFT
-       right-stimulus  =RIGHT
+       left-stimulus  A1
+       right-stimulus  A2
        reward  =R
-       curr-state  =CURR
-       next-state  =NEXT
-       response  =RESP
+       curr-state  A
+       next-state  =CURR
+       response  =RESP1
+    !output! (encode state2 curr-state A next-state  =CURR response  =RESP1 reward =R)
 )
 
 (p refresh-success

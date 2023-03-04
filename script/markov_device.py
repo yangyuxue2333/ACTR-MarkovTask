@@ -916,7 +916,7 @@ class MarkovACTR(MarkovState):
 
         # generate random walk probability
         self._random_table = RANDOM_TABLE
-        self._random_noise_table = RANDOM_TABLE
+        self._random_noise_table = RANDOM_NOISE_TABLE
 
         # load random walk probability
         self._random_walk_table = self.load_random_walk_reward_probabilities()
@@ -959,12 +959,9 @@ class MarkovACTR(MarkovState):
            NEXT-STATE  B
            RESPONSE  RIGHT
         """
-
-        global REWARD
-        #reward = [max(REWARD.values()), 0]
         reward = [1, 0]
-        comb1 = [i for i in itertools.product(['A'], ['LEFT', 'RIGHT'], ['B', 'C'], ['none'])]
-        comb2 = [i for i in itertools.product(['B', 'C'], ['LEFT', 'RIGHT'], ['none'], reward)]
+        comb1 = [i for i in itertools.product(['A'], ['LEFT', 'RIGHT'], ['B', 'C'], reward)]
+        comb2 = [i for i in itertools.product(['B', 'C'], ['LEFT', 'RIGHT'], ['nil'], reward)]
         comb = comb1 + comb2
         dm = []
         i = 0
@@ -972,8 +969,8 @@ class MarkovACTR(MarkovState):
             s, a, s_, r = c[0], c[1], c[2], c[3]
             i += 1
             if i > 4: i = 1  # 4 * 3 memory
-            #print(s, a, s_, r)
-            name = '%s%s-%s-%s-%s' % (s, str(i), str(a), str(s_), str(r))
+            # print(s, a, s_, r)
+            name = '%s-%s-%s-%s' % (s, str(a), str(s_), str(r))
             dm.append([name, 'isa', 'wm',
                        'status', 'process',
                        'left-stimulus', s+'1',
@@ -1058,8 +1055,8 @@ class MarkovACTR(MarkovState):
         # df['pre_received_reward'] = df['received_reward'].shift()
         # df['pre_received_reward'] = df.apply(lambda x: 'non-reward' if x['pre_received_reward'] == 0 else 'reward', axis=1)
         df = df.dropna(subset=['state1_stay', 'pre_received_reward', 'pre_state_frequency'])
-        df = df.astype({'pre_state_frequency': CategoricalDtype(categories=['common', 'rare'], ordered=True),
-                        'pre_received_reward': CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
+        df = df.astype({'pre_state_frequency': CategoricalDtype(categories=['rare', 'common'], ordered=True),
+                        'pre_received_reward': CategoricalDtype(categories=['non-reward', 'reward'], ordered=True)})
         df = df[['index', 'state_frequency', 'received_reward', 'pre_received_reward', 'pre_state_frequency', 'state1_stay', 'state1_response_time', 'state2_response_time']]
         return df
 
@@ -1090,7 +1087,7 @@ class MarkovACTR(MarkovState):
                         'state2_selected_stimulus_type': pd.CategoricalDtype(categories=['B', 'C']),
                         'state1_response': pd.CategoricalDtype(categories=['LEFT', 'RIGHT'], ordered=True),
                         'state2_response': pd.CategoricalDtype(categories=['LEFT', 'RIGHT'], ordered=True),
-                        'received_reward': pd.CategoricalDtype(categories=['reward', 'non-reward'], ordered=True)})
+                        'received_reward': pd.CategoricalDtype(categories=['non-reward', 'reward'], ordered=True)})
 
         df1 = df.groupby(['state1_selected_stimulus_type', 'state2_selected_stimulus_type', 'state1_response'])[
             'index'].count().reset_index()
@@ -1104,29 +1101,13 @@ class MarkovACTR(MarkovState):
         # add memory name
         df1 = df1.sort_values(by=['state1_selected_stimulus_type', 'state1_response'],
                               ascending=[True, True])
-        df1['memory'] = self.actr_chunk_names[:4]
+        df1['memory'] = [c for c in self.actr_chunk_names if (c.startswith('A') and c.endswith('1'))]
 
         df2 = df2.sort_values(by=['state2_selected_stimulus_type', 'state2_response', 'received_reward'],
                               ascending=[True, True, True])
-        df2['memory'] = self.actr_chunk_names[4:]
+        df2['memory'] = [c for c in self.actr_chunk_names if not c.startswith('A')]
 
         return df1, df2
-        # df = self.df_behaviors()
-        # df['state1_selected_stimulus_type'] = df.apply(lambda x: x['state1_selected_stimulus'][0], axis=1)
-        # df['state2_selected_stimulus_type'] = df.apply(lambda x: x['state2_selected_stimulus'][0], axis=1)
-        #
-        # df1 = pd.DataFrame(df.value_counts(['state1_selected_stimulus'], normalize=True),
-        #                    columns=['state1_frequency']).reset_index()
-        # df2 = pd.DataFrame(df[df['state1_selected_stimulus'] == 'A1'].value_counts(
-        #     ['state1_selected_stimulus', 'state2_selected_stimulus_type'], normalize=True),
-        #     columns=['state2_frequency1']).reset_index()
-        # df3 = pd.DataFrame(df[df['state1_selected_stimulus'] == 'A2'].value_counts(
-        #     ['state1_selected_stimulus', 'state2_selected_stimulus_type'], normalize=True),
-        #     columns=['state2_frequency2']).reset_index()
-        # res = df1.merge(df2, how='outer').merge(df3, how='outer')
-        # if merge:
-        #     res = df.merge(df1, how='left').merge(df2, how='left').merge(df3, how='left').round(2)
-        # return res
 
     def df_reward_probabilities(self, dataframe='long'):
         """
@@ -1302,188 +1283,3 @@ class MarkovACTR(MarkovState):
 
     def __repr__(self):
         return self.__str__()
-
-
-# class MarkovHuman(MarkovState):
-#     """A class for recording a Markov trial"""
-#
-#     def __init__(self, model='markov-monkey', verbose = True):
-#         """Inits a markov trial
-#         stimuli contain a list of markov states, e.g. [("A1", "A2"), ("B1", "B2")]
-#         """
-#         self.kind = model
-#         self.index = 0
-#
-#         self.log = []
-#         self.verbose = verbose
-#
-#         # init markov state
-#         self.markov_state = None
-#         self.action_space = ['f', 'k']
-#         self.response = None
-#
-#         # init parameters
-#         self.rl_parameters = {}
-#         self.task_parameters = {'MARKOV_PROBABILITY': 0.7,
-#                                 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28},
-#                                 'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}}
-#
-#     def respond_to_key_press(self):
-#         key = None
-#         if self.kind == 'markov-monkey':
-#             key = self.response_monkey()
-#
-#         elif self.kind == 'markov-left':
-#             key = self.response_left()
-#
-#         else:
-#             key = self.action_space[1]
-#
-#         self.response = key
-#         self.next_state(key)
-#
-#     def response_monkey(self):
-#         return random.choice(self.action_space)
-#
-#     def response_left(self):
-#         return self.action_space[0]
-#
-#     def next_state(self, response):
-#         '''decide next state based on response
-#            self.markov_state will be updated based on response
-#
-#            e.g. self.markov_state.state == 0, then call self.markov_state.state1(key)
-#            e.g. self.markov_state.state == 2, then call self.markov_state.state2(key)
-#                                               then call self.markov_state.reward()
-#            note: the amount of reward is specified by REWARD dict()
-#
-#            this function will be called in respond_to_key_press() in state 1, 2
-#            and in update_state3() in state 3
-#         '''
-#         # print('test', self.markov_state.state1_stimuli, self.markov_state.state2_stimuli)
-#         if self.markov_state.state == 0:
-#             self.markov_state.state1(response)
-#             self.markov_state.state1_response_time = 0.0
-#
-#
-#         else:
-#             self.markov_state.state2(response)
-#             self.markov_state.state2_response_time = 0.0
-#
-#             # continue deliver rewards, no need to wait for response
-#             self.markov_state.reward()
-#
-#         # log
-#         if self.markov_state.state == 3:
-#
-#             # log actr trace
-#             self.log.append(self.markov_state)
-#             if self.verbose:
-#                 print(self.markov_state)
-#
-#     def run_experiment(self, n=1):
-#         """
-#         """
-#         for i in range(n):
-#             self.markov_state = MarkovState()
-#             self.markov_state.state0()  # init
-#             self.respond_to_key_press()
-#             self.respond_to_key_press()
-#             self.index += 1
-#
-#     def df_behaviors(self):
-#         """
-#         Return model generated beh data
-#         """
-#         rows = [[
-#             s.state1_response,
-#             s.state1_response_time,
-#             s.state1_selected_stimulus,
-#             s.state2_response,
-#             s.state2_response_time,
-#             s.state2_selected_stimulus,
-#             s.received_reward,
-#             s.state_frequency,
-#             s.reward_frequency
-#         ] for s in self.log]
-#         return pd.DataFrame(rows, columns= ['state1_response',
-#                                             'state1_response_time',
-#                                             'state1_selected_stimulus',
-#                                             'state2_response',
-#                                             'state2_response_time',
-#                                             'state2_selected_stimulus',
-#                                             'received_reward',
-#                                             'state_frequency',
-#                                             'reward_frequency'])
-#
-#     def df_reward_probabilities(self):
-#         """
-#         Return reward probabilities if random walk is enabled
-#         """
-#         df_wide = pd.DataFrame([{'state2_selected_stimulus': s.state2_selected_stimulus,
-#                                  'received_reward': s.received_reward,
-#                                  **s.curr_reward_probability_dict} for s in self.log])
-#         df_wide = df_wide.reset_index()
-#         res = df_wide.melt(id_vars=['index', 'state2_selected_stimulus', 'received_reward'],
-#                            var_name='state2_stimulus', value_name='reward_probability').sort_values(by='index')
-#         return res
-#
-#     def df_optimal_behaviors(self, num_bin=4):
-#         """
-#         Estimate the optimal response
-#         First, look at selected responses from state2, and curr_reward_probability_dict.
-#         If random walk is enabled, curr_reward_probability_dict = random
-#         Otherwise, curr_reward_probability_dict = fixed
-#         Second, bin trials into 4 blocks (default), and calculate the mean reward probability in each block
-#         Third, find out the state2 response with hightest reward probability, this is the optimal response
-#         Lastly, join the optimal response back to wide df
-#         """
-#         df_wide = pd.DataFrame([{'state1_selected_stimulus': s.state1_selected_stimulus,
-#                                  'state2_selected_stimulus': s.state2_selected_stimulus,
-#                                  'received_reward': s.received_reward,
-#                                  **s.curr_reward_probability_dict} for s in self.log]).reset_index()
-#         df_wide['index_bin'] = pd.cut(df_wide['index'], num_bin, labels=False, ordered=False, right=False)
-#         df_max = df_wide.groupby(['index_bin'])[['B1', 'B2', 'C1', 'C2']].mean().reset_index()
-#
-#         # estimate the optimal state2 response by highest reward probabilities
-#         df_max['state2_optimal'] = df_max[['B1', 'B2', 'C1', 'C2']].idxmax(axis=1)
-#
-#         # estimate the optimal state1 response by common path from state1 to state2
-#         df_max['state1_optimal'] = df_max['state2_optimal'].replace({'B1': 'A1', 'B2': 'A1', 'C1': 'A2', 'C2': 'A2'})
-#
-#         res = pd.merge(df_wide[['index', 'index_bin']], df_max[['index_bin', 'state1_optimal', 'state2_optimal']], how='left')
-#         return res
-#
-#     def calculate_stay_probability(self):
-#         """
-#         Calculate the probability of stay:
-#             A trial is marked as "STAY" if the agent selects the same action in current trial (e.g. LEFT)
-#             as the previous trial
-#         """
-#         df = self.df_behaviors()
-#         df['state1_stay'] = df['state1_response'].shift(-1)
-#         df['state1_stay'] = df.apply(
-#             lambda x: 1 if x['state1_stay'] == x['state1_response'] else (np.nan if pd.isnull(x['state1_stay']) else 0), axis=1)
-#         return df
-#
-#     def df_postprocess_behaviors(self, state1_response='f', state2_response='k'):
-#         df = pd.merge(self.df_behaviors(), self.df_optimal_behaviors())
-#         # df['index_bin'] = pd.cut(df['index'], 10, labels=False, ordered=False, right=False)
-#         df['received_reward_norm'] = df['received_reward'] / df['received_reward'].max()
-#         df['received_reward_sum'] = df['received_reward_norm'].cumsum()
-#         df['is_optimal'] = df.apply(lambda x: 1 if (x['state1_response'] == x['state1_optimal'] and x['state2_response'] == x['state2_optimal']) else 0, axis=1)
-#         #df['is_optimal'] = df.apply(lambda x: 1 if (x['state1_response'] == state1_response and x['state2_response'] == state2_response) else 0, axis=1)
-#         df['received_reward_sum_prop'] = df.apply(lambda x: x['received_reward_sum'] / ((x['index'] + 1)), axis=1)
-#         df = pd.merge(df, df.groupby(['index_bin'])['is_optimal'].mean().reset_index(), how='left', on='index_bin', suffixes=('', '_mean'))
-#         df['optimal_response_sum'] = df['is_optimal'].cumsum()
-#         df['optimal_response_sum_prop'] = df.apply(lambda x: x['optimal_response_sum'] / ((x['index'] + 1)), axis=1)
-#         return df
-#
-#     def __str__(self):
-#         header = "######### SETUP MODEL " + self.kind + " #########\n" + str(self.task_parameters)
-#         return header
-#
-#     def __repr__(self):
-#         return self.__str__()
-
-

@@ -1306,13 +1306,15 @@ class Plot:
     @staticmethod
     def plot_activation_trace(df1_atrace):
         assert set(['count', ':Reference-Count', ':Activation']).issubset(set(df1_atrace.columns))
-        reward_colors = ['#F96666', '#FFD4D4'] * 4
-        frequency_colors = ['#3C4048', '#B2B2B2', '#B2B2B2', '#3C4048']
+        # define palette
+        common_color, rare_color, reward_color, non_reward_color = '#3C4048', '#B2B2B2', '#F96666', '#FFD4D4'
+        frequency_colors = [common_color, common_color, rare_color, rare_color] * 2
+        reward_colors = [non_reward_color, reward_color] * 4
 
         my_chunk_palette = sns.color_palette(frequency_colors + reward_colors)
         chunk_order = df1_atrace['memory'].sort_values().unique()
 
-        fig, axes = plt.subplots(3, 1, figsize=(Plot.FIG_WIDTH, 4*Plot.FIT_HEIGHT), sharey=True, sharex=False)
+        fig, axes = plt.subplots(3, 1, figsize=(2*Plot.FIG_WIDTH, 4*Plot.FIT_HEIGHT), sharey=True, sharex=False)
         fig.suptitle('Summary: ACT-R Memory Trace')
         sns.barplot(data=df1_atrace, y='memory', x='count', order=chunk_order, palette=my_chunk_palette, ax=axes[0])
         sns.barplot(data=df1_atrace, y='memory', x=':Reference-Count', order=chunk_order, palette=my_chunk_palette,
