@@ -1135,11 +1135,14 @@ class MarkovACTR(MarkovState):
         # add memory name
         df1 = df1.sort_values(by=['state1_selected_stimulus_type', 'state1_response'],
                               ascending=[True, True])
-        df1['memory'] = [c for c in self.actr_chunk_names if (c.startswith('A') and c.endswith('1'))]
+        df1['memory'] = df1.apply(lambda x:x['state1_selected_stimulus_type'] + '-' + x['state1_response'] + '-' + x['state2_selected_stimulus_type'] + '-' + 'R', axis=1)
+        #[c for c in self.actr_chunk_names if (c.startswith('A') and c.endswith('R'))]
 
         df2 = df2.sort_values(by=['state2_selected_stimulus_type', 'state2_response', 'received_reward'],
                               ascending=[True, True, True])
-        df2['memory'] = [c for c in self.actr_chunk_names if not c.startswith('A')]
+        # df2['memory'] = [c for c in self.actr_chunk_names if not c.startswith('A')]
+        reward_codes = {'reward': 'R', 'non-reward':'NR'}
+        df2['memory'] = df2.apply(lambda x:x['state2_selected_stimulus_type'] + '-' + x['state2_response'] + '-' + 'nil' + '-' + reward_codes[x['received_reward']], axis=1)
 
         return df1, df2
 
@@ -1273,7 +1276,7 @@ class MarkovACTR(MarkovState):
                 df2['index_bin'] = pd.cut(df2['index'], 10, labels=False)
                 df2.replace(to_replace=[None], value=np.nan, inplace=True)
                 df2['memory_type'] = df2.apply(lambda x:x['memory'].split('-')[-1], axis=1).\
-                    replace(to_replace=['1', '0'], value=['reward', 'non-reward'])
+                    replace(to_replace=['R', 'NR'], value=['reward', 'non-reward'])
             except:
                 print('no memory trace')
                 df2 = None
@@ -1301,7 +1304,7 @@ class MarkovACTR(MarkovState):
 
             df2.replace(to_replace=[None], value=np.nan, inplace=True)
             df2['memory_type'] = df2.apply(lambda x:x['memory'].split('-')[-1], axis=1).\
-                replace(to_replace=['1', '0'], value=['reward', 'non-reward'])
+                replace(to_replace=['R', 'NR'], value=['reward', 'non-reward'])
 
             # add trial counts
             df_count1, df_count2 = self.calculate_real_frequency()
