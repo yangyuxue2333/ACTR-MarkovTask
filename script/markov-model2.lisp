@@ -743,11 +743,7 @@
      stage      =STAGE
    
    =visual>
-   -imaginal>
-   
-   ; =imaginal>
-   ;   next-state =STATE
-   ;   reward none 
+   @imaginal>  ; overwrite, no harvest
 )
 
 

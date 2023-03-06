@@ -80,7 +80,7 @@
          :ans 0.2
          :lf 0.5     ; latency factor: if 0 ;immediately retrieve memory (higher activation, retrieve faster)
          :bll 0.5    ; enable base-level learning, decay rate
-         :mp 10
+         ;:mp 10
          :rt -5      ; retrieval threshold
          ;:imaginal-activation 3.0
          ;;; ----------------- UTILITY PARAMETER-----------------

@@ -16,7 +16,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model1.lisp
-;;; Version     :v1.3
+;;; Version     :v1.8
 ;;;
 ;;; Description : model-free 
 ;;;
@@ -91,8 +91,7 @@
 ;;; P ATTEND-STATE1() 
 ;;; |--- P CHOOSE-STATE1-LEFT() 
 ;;; |--- P CHOOSE-STATE1-RIGHT() 
-;;; P ENCODE-STATE1 () 
-;;; P REFRESH-MEMORY () 
+;;; P ENCODE-STATE1 ()  
 ;;; ===== STATE2 ===== 
 ;;; P ATTEND-STATE2 () 
 ;;; |--- P CHOOSE-STATE2-LEFT() 
@@ -150,8 +149,14 @@
       updated-motivation            ;;; mental counts
       time-onset                    ;;; mental clock
       time-duration                 ;;; mental clock
-      current-reward                ;;; current reward given
-      previous-reward)              ;;; previous reward given
+      current-reward                ;;; reward received in current trial
+      previous-reward               ;;; reward received in previous trial
+      ;;; blending
+      state-b-blended-value         ;;; 
+      state-c-blended-value         ;;;
+      diff-blended-value            ;;; state-b-blended-value - state-c-blended-value
+      best-blended-state            ;;; "B" or "C"
+)
 
 
 
@@ -308,14 +313,12 @@
      step       encode-stimulus 
 ==>
    =goal> 
-     step       refresh-memory 
+     step       attend-stimulus  
      stage      =STAGE
    
    =visual>
    
-   =imaginal>
-     next-state =STATE
-     reward none
+   @imaginal>
 )
 
 
@@ -381,17 +384,15 @@
      current-reward =REWARD
    
    =imaginal>
-     reward    =REWARD
-     next-state none
+     reward    =REWARD 
    
    -visual>
    
    !eval! (trigger-reward =REWARD)
 )
 
-
 (p refresh-memory
-  "refresh memorty !!!update: no longer retrieve, but encode "
+  "refresh memory: harvesting imaginal buffer"
    ?imaginal>
      state free
      buffer full
@@ -402,49 +403,51 @@
    
    =goal>
      step  refresh-memory
+     plan-state1-response  =RESP1
    
    =imaginal>
        status  PROCESS
-       left-stimulus  =LEFT
-       right-stimulus  =RIGHT
        reward  =R
        curr-state  =CURR
-       next-state  =NEXT
        response  =RESP
    
 ==>
-   
+   !output! (encode state2 curr-state  =CURR response  =RESP reward  =R)
    =goal>
-    step  refresh-done
-   
-   =imaginal>
-   
+    step  refresh-success  ; one-time refresh
+
+   -imaginal>
+
+   ;;; encode state1 memory
    +imaginal>
        isa wm
        status  PROCESS
-       left-stimulus  =LEFT
-       right-stimulus  =RIGHT
+       left-stimulus  A1
+       right-stimulus  A2
        reward  =R
-       curr-state  =CURR
-       next-state  =NEXT
-       response  =RESP
+       curr-state  A
+       next-state  =CURR
+       response  =RESP1
+    !output! (encode state1 curr-state A next-state  =CURR response  =RESP1 reward =R)
 )
+
 
 (p refresh-success
  "success refresh"
   ?imaginal>
      state free
-     buffer full 
+     buffer full
+   
+   ?retrieval>
+     state free
 
    =goal>
-     step  refresh-done
-   
-==> 
-   
+     step  refresh-success
+==>
    =goal>
-    step attend-stimulus 
-   
-   -imaginal> 
+    step attend-stimulus
+
+   -imaginal>
  )
 
 
@@ -490,6 +493,7 @@
    
    =goal>
      step       encode-stimulus 
+     plan-state1-response left
    
    =imaginal>
       response left
@@ -530,6 +534,7 @@
    
    =goal>
      step       encode-stimulus 
+     plan-state1-response right
    
    =imaginal>
       response right
@@ -574,6 +579,7 @@
    
    =goal>
      step       encode-stimulus 
+     plan-state2-response left
    
    =imaginal>
       response left
@@ -617,6 +623,7 @@
    
    =goal>
      step       encode-stimulus 
+     plan-state2-response right
    
    =imaginal>
       response right
@@ -651,3 +658,30 @@
    !stop!
 
 )
+
+
+
+; ######### SETUP MODEL markov-model1 #########
+;   >> TASK PARAMETERS: {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': {}, 'REWARD': {'B1': (1, 0), 'B2': (1, 0), 'C1': (1, 0), 'C2': (1, 0)}, 'RANDOM_WALK': 'LOAD', 'M': 1} <<
+;   >> ACT-R PARAMETERS: {'v': 't', 'seed': '[100, 0]', 'ans': 0.2, 'lf': 0.1, 'bll': 0.5, 'egs': 0.2, 'alpha': 0.2, 'bln': 't', 'act': 't', 'blt': 't', 'dmt': 'nil', 'rt': -10} <<
+
+;      0.050   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+;      1.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      1.185   PROCEDURAL             PRODUCTION-FIRED PROCESS-FIXATION
+;      2.135   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      2.270   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE1
+;      2.520   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE1-RIGHT
+;      2.780   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      2.915   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE1
+;      2.965   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE2
+;      3.215   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE2-RIGHT
+;      3.325   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      3.460   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE2
+; <[MARKOV_STATE]   [R, 0.65]'A2'   [R, 0.50]'C2'   R:[0]   [C][C]
+;      3.510   PROCEDURAL             PRODUCTION-FIRED REFRESH-MEMORY
+; ENCODE STATE2 CURR-STATE C RESPONSE RIGHT REWARD 0
+; ENCODE STATE1 CURR-STATE A NEXT-STATE C RESPONSE RIGHT REWARD 0
+;      3.760   PROCEDURAL             PRODUCTION-FIRED REFRESH-SUCCESS
+;      3.810   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+;     80.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;     80.185   PROCEDURAL             PRODUCTION-FIRED DONE

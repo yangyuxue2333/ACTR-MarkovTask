@@ -32,11 +32,11 @@ RESPONSE_MAP = [{'f':'A1', 'k':'A2'},
 RESPONSE_CODE = {'f':'L', 'k':'R'}
 
 # ACTR PARAMETERS
-ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'mas', 'egs', 'alpha', 'imaginal-activation']
+ACTR_PARAMETER_NAMES = ['v', 'seed', 'ans', 'lf', 'bll',  'egs', 'alpha']
 
 # TASK PARAMETERS
 M = 1
-REWARD: Dict[str, float] = {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2}
+REWARD: Dict[str, float] = {'B1': (2, 0), 'B2': (2, 0), 'C1': (2, 0), 'C2': (2, 0)}
 PROBABILITY = {'MARKOV_PROBABILITY':.7, 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28}}
 RANDOM_WALK = 'LOAD'  #Enable random walk for reward probability
 RANDOM_TABLE, RANDOM_NOISE_TABLE = None, None
@@ -164,19 +164,10 @@ class MarkovState():
         self.state_frequency = None
         self.reward_frequency = None
 
-
         ### ACTR TRACE
         self.actr_chunk_trace = None
         self.actr_production_trace = None
         self.state0()
-
-    # @property
-    # def state1_response_time(self):
-    #     return self._state1_response_time
-    #
-    # @property
-    # def state2_response_time(self):
-    #     return self._state2_response_time
 
     @property
     def state(self):
@@ -203,12 +194,20 @@ class MarkovState():
         self._state2_response_time = val
 
     # @property
-    # def reward_probability_random_walk(self):
-    #     return self._reward_probability_random_walk
+    # def best_blend(self):
+    #     if self._curr_state == 1:
+    #         return self._state1_best_blend
+    #     elif self._curr_state == 2:
+    #         return self._state2_best_blend
+    #     else:
+    #         return
     #
-    # @reward_probability_random_walk.setter
-    # def reward_probability_random_walk(self, val):
-    #     self._reward_probability_random_walk = val
+    # @best_blend.setter
+    # def best_blend(self, V):
+    #     if self._curr_state == 'A':
+    #         self._state1_best_blend = V
+    #     if self._curr_state in ('B', 'C'):
+    #         self._state2_best_blend = V
 
     def get_letter_frequency(self, probability):
         if probability > .5:
@@ -219,6 +218,7 @@ class MarkovState():
     def state0(self):
         self.state1_stimuli = MarkovStimulus('A1'), MarkovStimulus('A2')
         self.state = 0
+        self._curr_state = 'A'
 
     def state1(self, response):
 
@@ -232,10 +232,12 @@ class MarkovState():
                 # log reward frequency
                 #self.state_frequency = 'common'
                 self.state_frequency = self.get_letter_frequency(self.markov_probability)
+                self._curr_state = 'B'
             else:
                 self.state2_stimuli = MarkovStimulus('C1'), MarkovStimulus('C2')
                 #self.state_frequency = 'rare'
                 self.state_frequency = self.get_letter_frequency(1-self.markov_probability)
+                self._curr_state = 'C'
             self.state2_selected_stimulus = RESPONSE_MAP[1][response]
 
         if RESPONSE_MAP[0][response] == 'A2':
@@ -243,10 +245,12 @@ class MarkovState():
                 self.state2_stimuli = MarkovStimulus('C1'), MarkovStimulus('C2')
                 #self.state_frequency = 'common'
                 self.state_frequency = self.get_letter_frequency(self.markov_probability)
+                self._curr_state = 'C'
             else:
                 self.state2_stimuli = MarkovStimulus('B1'), MarkovStimulus('B2')
                 #self.state_frequency = 'rare'
                 self.state_frequency = self.get_letter_frequency(1-self.markov_probability)
+                self._curr_state = 'B'
             self.state2_selected_stimulus = RESPONSE_MAP[2][response]
 
         self.state = 1
@@ -272,23 +276,15 @@ class MarkovState():
         self.curr_reward_probability_dict <- updated reward_probability_dict
 
         """
-        # enable random walk
-        # if (RANDOM_WALK is True):
-        #     self.curr_reward_probability = self.reward_probability_random_walk[self.state2_selected_stimulus] # num value
-        #     self.curr_reward_probability_dict = self.reward_probability_random_walk # dict
-        # else:
-        #     # log reward probability
-        #     self.curr_reward_probability = self.reward_probability_fixed[self.state2_selected_stimulus]
-        #     self.curr_reward_probability_dict = self.reward_probability_fixed
         self.curr_reward_probability = self.curr_reward_probability_dict[self.state2_selected_stimulus]
 
         # decide received reward
         if MarkovACTR.pseudo_random() < self.curr_reward_probability: #self.curr_reward_probability[self.state2_selected_stimulus]:
-            self.received_reward = self.reward_dict[self.state2_selected_stimulus]
+            self.received_reward = self.reward_dict[self.state2_selected_stimulus][0]
             # log reward frequency
             self.reward_frequency = self.get_letter_frequency(self.curr_reward_probability)
         else:
-            self.received_reward = 0  # default reward value
+            self.received_reward = self.reward_dict[self.state2_selected_stimulus][1] #DEFAULT_REWARD  # default reward value
             # log reward frequency
             self.reward_frequency = self.get_letter_frequency(1-self.curr_reward_probability)
         # print('TEST L294:[%s] [%s] [%s] [%s]' % (self.curr_reward_probability, self.state2_selected_stimulus, self.curr_reward_probability, self.reward_frequency))
@@ -313,7 +309,10 @@ class MarkovState():
         """
         return a list of production names
         """
-        self._actr_production_names = ['CHOOSE-STATE1-LEFT', 'CHOOSE-STATE1-RIGHT', 'CHOOSE-STATE2-LEFT', 'CHOOSE-STATE2-RIGHT']
+        self._actr_production_names = ['CHOOSE-STATE1-LEFT',
+                                       'CHOOSE-STATE1-RIGHT',
+                                       'CHOOSE-STATE2-LEFT',
+                                       'CHOOSE-STATE2-RIGHT']
         return self._actr_production_names
 
     @staticmethod
@@ -418,6 +417,14 @@ class MarkovACTR(MarkovState):
 
         self.add_actr_commands()
 
+        # init parameter sets
+        self.actr_parameters = self.get_default_actr_parameters()
+        self.task_parameters = self.get_default_task_parameters()
+
+        # update parameter sets
+        self.set_actr_parameters(actr_params)
+        self.set_task_parameters(task_params)
+
         if reload:
             # schedule event of detect production/reward before loading model
             # note: if not load, no need to schedule it again
@@ -432,16 +439,14 @@ class MarkovACTR(MarkovState):
             actr.schedule_event_now("detect-production-hook")
             actr.schedule_event_now("detect-merge-hook")
 
-        # init parameter sets
-        self.actr_parameters = self.get_default_actr_parameters()
-        self.task_parameters = self.get_default_task_parameters()
+            # init actr parameters
+            self.actr_parameters = self.get_default_actr_parameters()
+            self.set_actr_parameters(actr_params)
 
-        # update parameter sets
-        self.set_actr_parameters(actr_params)
-        self.set_task_parameters(task_params)
 
         # goal focus
-        mot = str(self.task_parameters['M'] * np.max(list(self.task_parameters['REWARD'].values())))
+        reward_val = list(self.task_parameters['REWARD'].values())[0][0]
+        mot = str(self.task_parameters['M'] * np.max(reward_val))
         actr.define_chunks(['start-trial', 'isa', 'phase', 'step', 'attend-stimulus', 'motivation', mot, 'time-onset', '0.0', 'previous-reward', '0.0', 'current-reward', '0.0'])
         actr.goal_focus('start-trial')
 
@@ -959,7 +964,10 @@ class MarkovACTR(MarkovState):
            NEXT-STATE  B
            RESPONSE  RIGHT
         """
-        reward = [1, 0]
+        global REWARD
+        response_code = {'R':list(self.task_parameters['REWARD'].values())[0][0],  #1
+                         'NR':list(self.task_parameters['REWARD'].values())[0][1]} #0
+        reward = list(response_code.keys())
         comb1 = [i for i in itertools.product(['A'], ['LEFT', 'RIGHT'], ['B', 'C'], reward)]
         comb2 = [i for i in itertools.product(['B', 'C'], ['LEFT', 'RIGHT'], ['nil'], reward)]
         comb = comb1 + comb2
@@ -978,7 +986,7 @@ class MarkovACTR(MarkovState):
                        'curr-state', s,
                        'next-state', s_,
                        'response', a,
-                       'reward', r])
+                       'reward', response_code[r]])
         # define chunk name
         chunk_names = [m[0] for m in dm]
         self._actr_chunk_names = chunk_names
@@ -998,8 +1006,8 @@ class MarkovACTR(MarkovState):
         return {'M': 1,
                 'MARKOV_PROBABILITY': 0.7,
                 'REWARD_PROBABILITY': {'B1': 0.26, 'B2': 0.57, 'C1': 0.41, 'C2': 0.28},
-                'REWARD': {'B1': 2, 'B2': 2, 'C1': 2, 'C2': 2},
-                'RANDOM_WALK': True}
+                'REWARD': {'B1': (2, 0), 'B2': (2, 0), 'C1': (2, 0), 'C2': (2, 0)},
+                'RANDOM_WALK': 'LOAD'}
 
 
     # =================================================== #
@@ -1020,24 +1028,50 @@ class MarkovACTR(MarkovState):
             s.received_reward,
             s.state_frequency,
             s.reward_frequency,
-            self.task_parameters['M']
         ] for s in self.log]
 
-        df = pd.DataFrame(rows, columns= ['state1_response',
-                                            'state1_response_time',
-                                            'state1_selected_stimulus',
-                                            'state2_response',
-                                            'state2_response_time',
-                                            'state2_selected_stimulus',
-                                            'received_reward',
-                                            'state_frequency',
-                                            'reward_frequency',
-                                            'm_parameter']).reset_index()
+        df = pd.DataFrame(rows, columns=['state1_response',
+                                         'state1_response_time',
+                                         'state1_selected_stimulus',
+                                         'state2_response',
+                                         'state2_response_time',
+                                         'state2_selected_stimulus',
+                                         'received_reward',
+                                         'state_frequency',
+                                         'reward_frequency']).reset_index()
         df['pre_received_reward'] = df['received_reward'].shift()
-        df['pre_received_reward'] = df.apply(lambda x: x['pre_received_reward'] if  pd.isnull(x['pre_received_reward'])\
-            else ('non-reward' if x['pre_received_reward']==0 else 'reward'), axis=1)
+        df['pre_received_reward'] = df.apply(lambda x: x['pre_received_reward'] if pd.isnull(x['pre_received_reward']) \
+            else ('non-reward' if x['pre_received_reward'] <= 0 else 'reward'), axis=1)
         df['pre_state_frequency'] = df['state_frequency'].shift()
         return df
+        # rows = [[
+        #     s.state1_response,
+        #     s.state1_response_time,
+        #     s.state1_selected_stimulus,
+        #     s.state2_response,
+        #     s.state2_response_time,
+        #     s.state2_selected_stimulus,
+        #     s.received_reward,
+        #     s.state_frequency,
+        #     s.reward_frequency,
+        #     self.task_parameters['M']
+        # ] for s in self.log]
+        #
+        # df = pd.DataFrame(rows, columns= ['state1_response',
+        #                                     'state1_response_time',
+        #                                     'state1_selected_stimulus',
+        #                                     'state2_response',
+        #                                     'state2_response_time',
+        #                                     'state2_selected_stimulus',
+        #                                     'received_reward',
+        #                                     'state_frequency',
+        #                                     'reward_frequency',
+        #                                     'm_parameter']).reset_index()
+        # df['pre_received_reward'] = df['received_reward'].shift()
+        # df['pre_received_reward'] = df.apply(lambda x: x['pre_received_reward'] if  pd.isnull(x['pre_received_reward'])\
+        #     else ('non-reward' if x['pre_received_reward']==0 else 'reward'), axis=1)
+        # df['pre_state_frequency'] = df['state_frequency'].shift()
+        # return df
 
     def calculate_stay_probability(self):
         """

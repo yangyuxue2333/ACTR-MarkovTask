@@ -16,15 +16,17 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    :markov-model3.lisp
-;;; Version     :v3.3
+;;; Version     :v3.8
 ;;;
 ;;; Description : model-motivation 
 ;;;
 ;;; Bugs        :
 ;;;
 ;;;
-;;; To do       :
+;;; To do       : 
 ;;;
+;;;
+;;; v key updates: updated based on MB v2.8, use blending
 ;;;
 ;;; ----- History -----
 ;;;
@@ -104,9 +106,7 @@
 ;;; |------ P PLAN-STATE1-RANDOM-LEFT()  ;;; COMPETE
 ;;; |--------- P CHOOSE-STATE1-LEFT()
 ;;; |------ P PLAN-STATE1-RANDOM-RIGHT() ;;; COMPETE
-;;; |--------- P CHOOSE-STATE1-RIGHT()
-;;; P REFRESH-MEMORY() 
-;;; P REFRESH-MEMORY-SUCCESS()
+;;; |--------- P CHOOSE-STATE1-RIGHT() 
 ;;; ===== STATE2 =====
 ;;; P ENCODE-STATE2-STIMULUS ()  
 ;;; P PLAN-STATE2-RETRIEVE ()  
@@ -173,7 +173,13 @@
       time-onset                    ;;; mental clock
       time-duration                 ;;; mental clock
       current-reward                ;;; current reward given
-      previous-reward)              ;;; previous reward given
+      previous-reward               ;;; previous reward given
+
+      state-b-blended-value         ;;; blended value of state-b
+      state-c-blended-value         ;;; blended value of state-c
+      diff-blended-value            ;;; state-b-blended-value - state-c-blended-value
+      best-blended-state            ;;; selected best state based on blended value
+)
 
 
 
@@ -219,7 +225,7 @@
       
    !eval! (trigger-reward 0) ; CLEAR REWARD  
    
-   !output! (prepare-wm MOTIVATION =MOT TIME-ONSET =TIME PRE-REWARD =R)
+   !output! (INIT MOTIVATION =MOT TIME-ONSET =TIME PRE-REWARD =R)
 )
 
 (p find-screen
@@ -265,7 +271,7 @@
       time-onset =CURRTIME
       
       
-    !output! (in process-fixation time-onset =CURRTIME updated-motivation =MOT)
+    !output! (T =CURRTIME updated-motivation =MOT)
 )
 
 ;;; ----------------------------------------------------------------
@@ -371,7 +377,7 @@
    =goal>
        step plan
        updated-motivation   =DIFF
-   !output! (plan-at-stage1-start MOTIVATION =MOT CURR TIME =CURRTIME UPDATED-MOTIVATION =DIFF)
+   !output! (MOTIVATION =MOT CURR TIME =CURRTIME UPDATED-MOTIVATION =DIFF)
 )
 
 
@@ -401,7 +407,7 @@
    
    -retrieval>
    
-   !output! (in plan-state1-retrieve-skip  updated-motivation =MOT)
+   !output! (UPDATED-MOTIVATION =MOT)
 )
 
 
@@ -471,16 +477,18 @@
 ;;; ----------------------------------------------------------------
 ;;; PLAN STATE1
 ;;; ----------------------------------------------------------------
-(p plan-backward-at-stage1-state2
+
+(p plan-backward-at-stage1-start
    "Plan backward at stage1: state2"
-   ?retrieval>
+   ?blending>
         state free
         buffer empty
+        error nil
    
    ?goal>
        state free
-   
-   ?imaginal>
+
+    ?imaginal>
        state free
    
    =visual>
@@ -490,9 +498,9 @@
    =imaginal>
        - curr-state nil
        respond nil
-       next-state nil
-   
-   =goal>
+       next-state nil 
+
+    =goal>
        isa phase
        step plan
        plan-state1 nil
@@ -501,141 +509,269 @@
        motivation =MOT
        time-onset =TIME
 ==> 
-   +retrieval>
+
+    !bind!       =CURRTIME (mp-time)
+    !bind!       =DURATION (- =CURRTIME =TIME)
+    !bind! =DIFF (- =MOT =DURATION) 
+
+    =goal>
+        step plan-blend
+        updated-motivation   =DIFF
+
+    +blending>
         isa wm
-        status process
-        > reward 0
-        next-state none
-        :recently-retrieved nil      
-   
-   !bind!       =CURRTIME (mp-time)
-   !bind!       =DURATION (- =CURRTIME =TIME)
-   !bind! =DIFF (- =MOT =DURATION)
-   
-   =goal> 
-       updated-motivation   =DIFF
-   
+        curr-state B
+        :ignore-slots (STATUS RESPONSE NEXT-STATE LEFT-STIMULUS RIGHT-STIMULUS)
+
    =imaginal> 
-   
    =visual>
 
-   !output! (plan-backward-state2 motivation =MOT updated-motivation =DIFF)
+   !output! (MOTIVATION =MOT CURR TIME =CURRTIME UPDATED-MOTIVATION =DIFF)
 )
 
-(p plan-backward-at-stage1-state1
-   "Plan backward at stage1: state1"
-   ?retrieval>
+(p plan-backward-at-stage1-blend-b
+     =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+     
+     ?blending>
+       state free
+
+     ?imaginal>
+        state free 
+        buffer full
+
+     ?goal>
+        state free 
+     =goal>
+        isa phase
+        step plan-blend
+        state-b-blended-value nil
+        state-c-blended-value nil
+
+     =blending>
+       isa wm
+       reward =val 
+       curr-state =s
+
+
+  ==>
+   !output! (state =s blended reward is =val)
+
+   ; Overwrite the blended chunk to erase it and keep it
+   ; from being added to dm.  Not necessary, but keeps the
+   ; examples simpler.
+
+   @blending>
+
+   +blending>
+     isa wm
+     curr-state C  
+     :ignore-slots (STATUS RESPONSE NEXT-STATE LEFT-STIMULUS RIGHT-STIMULUS)
+
+   =goal>
+      state-b-blended-value =val
+
+   =visual>
+)
+
+(p plan-backward-at-stage1-blend-c
+     =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+         
+     ?blending>
+       state free
+
+     ?imaginal>
+        state free 
+        buffer full
+
+     ?goal>
+        state free
+
+     =blending>
+       isa wm
+       reward =c
+       curr-state =s
+        
+
+     =goal>
+        isa phase
+        step plan-blend
+        - state-b-blended-value nil
+        state-c-blended-value nil
+        state-b-blended-value =b
+    
+     ==>
+     
+     !output! (state =s blended reward is =c)
+
+     ; Overwrite the blended chunk to erase it and keep it
+     ; from being added to dm.  Not necessary, but keeps the
+     ; examples simpler.
+
+     @blending>
+
+     =visual>
+        
+     
+    !bind! =diff(- =b =c)
+
+    =goal>
+        step plan-evaluate 
+        state-c-blended-value =c
+        diff-blended-value =diff
+  )
+
+(p plan-backward-at-stage1-choose-b 
+    =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+
+    ?imaginal>
+        state free 
+        buffer full
+
+    ?goal>
         state free
         buffer full
-   
-   ?goal>
-       state free
-   
-   =visual>
-     kind MARKOV-STIMULUS
-     stage 1
-   
-   =imaginal>
-       - curr-state nil
-       respond nil
-       next-state nil
-   
-   =goal>
-       isa phase
-       step plan
-       plan-state1 nil
-       plan-state2 nil
-       > updated-motivation 0
-       motivation =MOT
-       time-onset =TIME
-   
-   =retrieval>
-        isa wm
-        status process
-        curr-state =CURR
+    =goal>
+        isa phase
+        step plan-evaluate
+        >= diff-blended-value 0
+ 
 ==> 
-   -retrieval>
    
-   +retrieval>
-        isa wm
-        status process
-        curr-state A
-        reward none
-        next-state =CURR
-        :recently-retrieved nil       
-   
-   !bind!       =CURRTIME (mp-time)
-   !bind!       =DURATION (- =CURRTIME =TIME)
-   !bind! =DIFF (- =MOT =DURATION)
-   
-   =goal>
-       plan-state2 =CURR
-       updated-motivation   =DIFF 
-   
-   =imaginal>
+   =goal> 
+        step plan-retrieve  
+        plan-state2 B
+        best-blended-state  B
    
    =visual>
+       
+  )
 
-   !output! (plan-backward-state1 STATE2 IS =CURR motivation =MOT updated-motivation =DIFF)
+(p plan-backward-at-stage1-choose-c 
+    =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+
+    ?imaginal>
+        state free 
+        buffer full
+
+    ?goal>
+        state free
+        buffer full
+
+    =goal>
+        isa phase
+        step plan-evaluate
+        <= diff-blended-value 0
+ 
+==> 
+   
+   =goal> 
+        step plan-retrieve 
+        plan-state2 C
+        best-blended-state C
+
+   =visual>        
+  )
+
+(p plan-backward-at-stage1-retrieve-response
+    =visual>
+         kind MARKOV-STIMULUS
+         stage 1
+
+  ?retrieval>
+        state free 
+        buffer empty
+
+  ?imaginal>
+        state free 
+        buffer full
+
+  ?goal>
+      state free
+      buffer full 
+  =goal>
+      isa phase
+      step plan-retrieve
+      - best-blended-state  nil
+      best-blended-state  =best-blended-state 
+ 
+==> 
+  ; retrieve the response that leads to next-state = best-blended state
+  +retrieval> 
+      isa wm
+      next-state  =best-blended-state 
+      > reward 0
+  
+  =visual>
+  =goal> 
+        step plan-complete
 )
-
 
 (p plan-backward-at-stage1-complete
    "Plan until state1"
-   ?retrieval>
-        state free
-        buffer full
-   
-   ?goal>
-       state free
-   
    =visual>
-     kind MARKOV-STIMULUS
-     stage 1
-   
-   =imaginal>
+         kind MARKOV-STIMULUS
+         stage 1
+   ?retrieval>
+        state free 
+        buffer full
+    ?imaginal>
+        state free 
+        buffer full
+    ?blending>
+       state free
+
+    ?goal>
+        state free 
+    =retrieval>
+        response =RESP
+
+    =imaginal>
        - curr-state nil
        response nil
        next-state nil
    
    =goal>
        isa phase
-       step plan
+       step plan-complete
        plan-state1 nil
        - plan-state2 nil
+       - best-blended-state  nil
+       best-blended-state  =best-blended-state 
        > updated-motivation 0
        motivation =MOT
        time-onset =TIME
-   
-   =retrieval>
-        isa wm
-        status process
-        curr-state A
-        reward none
-        response =RESP
 
 ==>
    !bind!       =CURRTIME (mp-time)
    !bind!       =DURATION (- =CURRTIME =TIME)
    !bind! =DIFF (- =MOT =DURATION)
-   
    =goal> 
        step respond
+       ; reset goal blended values
        plan-state1 nil
        plan-state2 nil
+       state-b-blended-value nil
+       state-c-blended-value nil
+       plan-state1-response =RESP
        updated-motivation   =DIFF 
    
    =imaginal>
        response =RESP
    
    -retrieval>
+   -blending>
    
-   =visual>
-   
-   !output! (plan-backward-complete STATE1 IS A RESP IS =RESP MOT =MOT updated-motivation =DIFF)
+   =visual> 
+   !output! (MOTIVATION =MOT CURR TIME =CURRTIME UPDATED-MOTIVATION =DIFF)
 )
-
-
 ;;; ----------------------------------------------------------------
 ;;; ENCODE STATE1
 ;;; ----------------------------------------------------------------
@@ -656,6 +792,7 @@
      - response nil
      next-state nil
      reward nil
+     response =RESP1
 
    ?retrieval>
      state free
@@ -667,20 +804,17 @@
    =goal>
      isa        phase
      step       encode-stimulus 
-==>
-   =goal> 
-     step       refresh-memory 
-     stage      =STAGE
+     plan-state1-response =RESP2
+==> 
+   
+   =goal>
+    step attend-stimulus 
+    stage      =STAGE 
+
+ !output! (imaginal =RESP1 plan-state1-response =RESP2)
    
    =visual>
-   
-   =imaginal>
-     next-state =STATE
-     reward none
-   
-   ;-imaginal>
-   
-   !output! (in encode-state1 =L =R)
+   @imaginal>
 )
 
 
@@ -721,65 +855,65 @@
      plan-state2 nil
    
    =visual>
-   
-   !output! (in attend-state2 =L =R)
 )
 
 ;;; ----------------------------------------------------------------
 ;;; PLAN STATE2
 ;;; ----------------------------------------------------------------
 
-(p plan-backward-at-stage2
-   "Plan backward at stage2"
-   ?retrieval>
-        state free
-        buffer empty
-   
-   ?goal>
-       state free
-   
-   =visual>
+(p plan-backward-at-stage2-retrieve-response
+    "Plan backward at stage2"
+    =visual>
      kind MARKOV-STIMULUS
-     stage 2
+     stage 2 
 
-   =imaginal>
+  ?retrieval>
+        state free 
+        buffer empty
+
+  ?imaginal>
+        state free 
+        buffer full
+
+  ?goal>
+      state free
+      buffer full 
+
+  =imaginal>
        status process
        - curr-state nil
        curr-state =CURR
        response nil
        next-state nil
        reward nil
-   
-   =goal>
-       isa phase
-       step plan
-       plan-state2 nil
-       > updated-motivation 0
-       motivation =MOT
-       time-onset =TIME
-       
-==> 
-   +retrieval>
-        isa wm
-        status process
-        curr-state =CURR
-        > reward 0
-        next-state none
-        :recently-retrieved nil
-   
+
+  =goal>
+      isa phase
+      step plan
+      plan-state2 nil
+      > updated-motivation 0
+      motivation =MOT
+      time-onset =TIME
+      
+==>
    !bind!       =CURRTIME (mp-time)
    !bind!       =DURATION (- =CURRTIME =TIME)
    !bind! =DIFF (- =MOT =DURATION)
-    
-   =goal>
-       plan-state2 =CURR
-       updated-motivation   =DIFF 
-   
-   =imaginal>
-   
-   =visual>
+  ; retrieve the response that leads to next-state = best-blended state
+  =goal> 
+        plan-state2 =CURR
+        updated-motivation   =DIFF
+  +retrieval>
+      isa wm
+      status process
+      curr-state  =CURR
+      > reward 0
 
-   !output! (plan-backward-at-stage2 curr-time =CURRTIME pdated-motivation =DIFF)
+  =imaginal>
+  =visual>
+
+  !output! (curr-state =CURR updated-motivation   =DIFF)
+  
 )
 
  (p plan-backward-at-stage2-complete
@@ -793,10 +927,11 @@
    
    =visual>
      kind MARKOV-STIMULUS
-     stage 2
+     stage 2 
    
    =imaginal>
        - curr-state nil
+       curr-state =CURR
        response nil
        next-state nil
    
@@ -804,36 +939,26 @@
        isa phase
        step plan
        - plan-state2 nil
-       > updated-motivation 0
-       motivation =MOT
-       time-onset =TIME
    
    =retrieval>
         isa wm
         status process 
         response =RESP
-
 ==>
-   !bind!       =CURRTIME (mp-time)
-   !bind!       =DURATION (- =CURRTIME =TIME)
-   !bind! =DIFF (- =MOT =DURATION)
-    
+   
    =goal> 
        step respond
        plan-state1 nil
        plan-state2 nil
-       updated-motivation   =DIFF 
    
    =imaginal>
        response =RESP
    
    -retrieval>
-   
    =visual>
-   
-   !output! (plan-backward-complete-state2 =RESP updated-motivation =DIFF)
-)
 
+   !output! (curr-state =CURR response =RESP)
+)
 
 ;;; ----------------------------------------------------------------
 ;;; ENCODE STATE2
@@ -869,16 +994,13 @@
      current-reward  =REWARD
    
    =imaginal>
-     reward    =REWARD
-     next-state none
+     reward    =REWARD 
    
-   -visual>
-   
-   ;-imaginal>
+   -visual> 
    
    !eval! (trigger-reward =REWARD)
    
-   !output! (in  encode-state2 reward =REWARD)
+   !output! (reward =REWARD)
 )
 
 ;;; ----------------------------------------------------------------
@@ -897,22 +1019,21 @@
    
    =goal>
      step  refresh-memory
+     plan-state1-response  =RESP1
      > updated-motivation 0 
        motivation =MOT
        time-onset =TIME
        updated-motivation =U
    
    =imaginal>
-       status  PROCESS
-       left-stimulus  =LEFT
-       right-stimulus  =RIGHT
+       status  PROCESS 
        reward  =R
-       curr-state  =CURR
-       next-state  =NEXT
+       curr-state  =CURR 
        response  =RESP
    
 ==>
-   
+   !output! (encode state2 curr-state  =CURR response  =RESP reward  =R)
+
    !bind!       =CURRTIME (mp-time)
    !bind!       =DURATION (- =CURRTIME =TIME)
    !bind! =DIFF (- =MOT =DURATION)
@@ -921,18 +1042,17 @@
     step  refresh-success
     updated-motivation   =DIFF
    
-   =imaginal>
-   
+
+   -imaginal>
    +imaginal>
        isa wm
        status  PROCESS
-       left-stimulus  =LEFT
-       right-stimulus  =RIGHT
+       left-stimulus  A1
+       right-stimulus  A2
        reward  =R
-       curr-state  =CURR
-       next-state  =NEXT
-       response  =RESP
-       ; :recently-retrieved reset
+       curr-state  A
+       next-state  =CURR
+       response  =RESP1
 )
 
 (p refresh-success
@@ -942,12 +1062,18 @@
      buffer full
    
    =goal>
-     ; one-time refresh
-     step  refresh-success
-     ; > updated-motivation 0
+     step  refresh-success 
+
+   =imaginal>
+       status  PROCESS 
+       reward  =R
+       next-state  =NEXT
+       response  =RESP1
    
 ==> 
-   
+
+   !output! (encode state1 curr-state A next-state  =NEXT response  =RESP1 reward =R)
+
    =goal>
     step attend-stimulus 
    
@@ -970,7 +1096,7 @@
    =goal>
     step attend-stimulus 
    
-   -imaginal>
+   @imaginal> ; overwrite, not harvest
  )
 
 ;;; ----------------------------------------------------------------
@@ -1021,7 +1147,7 @@
    =goal>
      step      encode-stimulus 
 
-   !output! (in choose-planed-state1 =RESP)  
+   
 )
 
 
@@ -1064,7 +1190,7 @@
    =goal>
      step       encode-stimulus 
 
-   !output! (in choose-planed-state1 =RESP)  
+   
 )
 
 (p choose-state2-left
@@ -1109,8 +1235,6 @@
    
    =imaginal>
       response left
-   
-   !output! (in choose-state2-plan-right())
   
 )
 
@@ -1155,9 +1279,7 @@
      step      encode-stimulus 
    
    =imaginal>
-      response right
-   
-   !output! (in choose-state2-plan-right())
+      response right 
   
 )
 
@@ -1223,3 +1345,92 @@
    !stop!
 
 )
+
+
+
+; ######### SETUP MODEL markov-model3-8 #########
+;     >> TASK PARAMETERS: {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': {}, 'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)}, 'RANDOM_WALK': 'LOAD', 'M': 5} <<
+;     >> ACT-R PARAMETERS: {'v': 't', 'seed': '[100, 0]', 'ans': 0.2, 'lf': 0.1, 'bll': 0.2, 'egs': 0.2, 'alpha': 0.2} <<
+
+;      0.050   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+; INIT MOTIVATION 5 TIME-ONSET 0.0 PRE-REWARD 0.0
+;      1.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      1.185   PROCEDURAL             PRODUCTION-FIRED PROCESS-FIXATION
+; T 1.185 UPDATED-MOTIVATION 5
+;      2.135   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      2.270   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE1
+;      2.520   PROCEDURAL             PRODUCTION-FIRED PLAN-START
+; MOTIVATION 5 CURR TIME 2.52 UPDATED-MOTIVATION 3.665
+;      2.570   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-START
+; MOTIVATION 5 CURR TIME 2.57 UPDATED-MOTIVATION 3.615
+;      2.643   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-BLEND-B
+; STATE B BLENDED REWARD IS 0.35900998
+;      2.716   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-BLEND-C
+; STATE C BLENDED REWARD IS -0.3435566
+;      2.766   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-CHOOSE-B
+;      2.816   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-RETRIEVE-RESPONSE
+;      2.884   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-COMPLETE
+; MOTIVATION 5 CURR TIME 2.884 UPDATED-MOTIVATION 3.3009999
+;      2.934   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE1-RIGHT
+;      3.194   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      3.329   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE1
+; IMAGINAL RIGHT PLAN-STATE1-RESPONSE RIGHT
+;      3.379   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE2
+;      3.629   PROCEDURAL             PRODUCTION-FIRED PLAN-START
+; MOTIVATION 5 CURR TIME 3.629 UPDATED-MOTIVATION 2.556
+;      3.679   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE2-RETRIEVE-RESPONSE
+; CURR-STATE C UPDATED-MOTIVATION 2.506
+;      3.810   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE2-COMPLETE
+; CURR-STATE C RESPONSE RIGHT
+;      3.860   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE2-RIGHT
+;      3.970   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;      4.105   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE2
+; REWARD -1
+; <[MARKOV_STATE]     [R, 1.06]'A2'   [R, 0.73]'C2'   R:[-1]  [C][C]
+;      4.155   PROCEDURAL             PRODUCTION-FIRED REFRESH-MEMORY
+; ENCODE STATE2 CURR-STATE C RESPONSE RIGHT REWARD -1
+;      4.405   PROCEDURAL             PRODUCTION-FIRED REFRESH-SUCCESS
+; ENCODE STATE1 CURR-STATE A NEXT-STATE C RESPONSE RIGHT REWARD -1
+;      4.455   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+; INIT MOTIVATION 5 TIME-ONSET 1.185 PRE-REWARD -1
+;    101.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;    101.185   PROCEDURAL             PRODUCTION-FIRED PROCESS-FIXATION
+; T 101.185 UPDATED-MOTIVATION 5
+;    102.135   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;    102.270   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE1
+;    102.520   PROCEDURAL             PRODUCTION-FIRED PLAN-START
+; MOTIVATION 5 CURR TIME 102.52 UPDATED-MOTIVATION 3.665001
+;    102.570   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-START
+; MOTIVATION 5 CURR TIME 102.57 UPDATED-MOTIVATION 3.6149979
+;    102.668   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-BLEND-B
+; STATE B BLENDED REWARD IS 0.83848315
+;    102.744   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-BLEND-C
+; STATE C BLENDED REWARD IS -0.761646
+;    102.794   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-CHOOSE-B
+;    102.844   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-RETRIEVE-RESPONSE
+;    102.947   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE1-COMPLETE
+; MOTIVATION 5 CURR TIME 102.947 UPDATED-MOTIVATION 3.237999
+;    102.997   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE1-LEFT
+;    103.207   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;    103.342   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE1
+; IMAGINAL LEFT PLAN-STATE1-RESPONSE LEFT
+;    103.392   PROCEDURAL             PRODUCTION-FIRED ATTEND-STATE2
+;    103.642   PROCEDURAL             PRODUCTION-FIRED PLAN-START
+; MOTIVATION 5 CURR TIME 103.642 UPDATED-MOTIVATION 2.5429993
+;    103.692   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE2-RETRIEVE-RESPONSE
+; CURR-STATE B UPDATED-MOTIVATION 2.4929962
+;    103.902   PROCEDURAL             PRODUCTION-FIRED PLAN-BACKWARD-AT-STAGE2-COMPLETE
+; CURR-STATE B RESPONSE RIGHT
+;    103.952   PROCEDURAL             PRODUCTION-FIRED CHOOSE-STATE2-RIGHT
+;    104.162   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;    104.297   PROCEDURAL             PRODUCTION-FIRED ENCODE-STATE2
+; REWARD -1
+; <[MARKOV_STATE]     [L, 1.07]'A1'   [R, 0.91]'B2'   R:[-1]  [C][C]
+;    104.347   PROCEDURAL             PRODUCTION-FIRED REFRESH-MEMORY
+; ENCODE STATE2 CURR-STATE B RESPONSE RIGHT REWARD -1
+;    104.597   PROCEDURAL             PRODUCTION-FIRED REFRESH-SUCCESS
+; ENCODE STATE1 CURR-STATE A NEXT-STATE B RESPONSE LEFT REWARD -1
+;    104.647   PROCEDURAL             PRODUCTION-FIRED PREPARE-WM
+; INIT MOTIVATION 5 TIME-ONSET 101.185 PRE-REWARD -1
+;    180.050   PROCEDURAL             PRODUCTION-FIRED FIND-SCREEN
+;    180.185   PROCEDURAL             PRODUCTION-FIRED DONE
