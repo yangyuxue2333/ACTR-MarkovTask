@@ -417,12 +417,8 @@ class MarkovACTR(MarkovState):
 
         self.add_actr_commands()
 
-        # init parameter sets
-        self.actr_parameters = self.get_default_actr_parameters()
+        # init task parameters
         self.task_parameters = self.get_default_task_parameters()
-
-        # update parameter sets
-        self.set_actr_parameters(actr_params)
         self.set_task_parameters(task_params)
 
         if reload:
@@ -442,6 +438,10 @@ class MarkovACTR(MarkovState):
             # init actr parameters
             self.actr_parameters = self.get_default_actr_parameters()
             self.set_actr_parameters(actr_params)
+
+
+        self.actr_parameters = self.get_default_actr_parameters()
+        self.set_actr_parameters(actr_params)
 
 
         # goal focus

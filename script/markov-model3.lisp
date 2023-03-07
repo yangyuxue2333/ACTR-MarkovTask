@@ -1121,7 +1121,7 @@
         
    =goal>
      isa        phase
-     step       respond
+     step       respond 
 
    =imaginal>
      status process 
@@ -1146,6 +1146,7 @@
    
    =goal>
      step      encode-stimulus 
+     plan-state1-response =RESP
 
    
 )
@@ -1189,6 +1190,7 @@
    
    =goal>
      step       encode-stimulus 
+     plan-state1-response =RESP
 
    
 )
@@ -1206,7 +1208,7 @@
         
    =goal>
      isa        phase
-     step       respond
+     step       respond 
 
    =imaginal>
      status process 
@@ -1217,6 +1219,7 @@
      response left
      next-state nil
      reward nil
+     response =RESP
     
    ?retrieval>
      state free
@@ -1232,6 +1235,7 @@
    
    =goal>
      step       encode-stimulus 
+     plan-state2-response =RESP
    
    =imaginal>
       response left
@@ -1260,6 +1264,7 @@
      - right-stimulus nil
      - response nil
      response right
+     response =RESP
      next-state nil
      reward nil
     
@@ -1277,6 +1282,7 @@
    
    =goal>
      step      encode-stimulus 
+     plan-state2-response =RESP
    
    =imaginal>
       response right 
