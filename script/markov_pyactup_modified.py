@@ -814,16 +814,26 @@ class MarkovIBL(MarkovState):
         # state_blend_dict = dict(zip(['B', 'C'], [b_value, c_value]))
         # best_blended_state = random.choice([k for k, v in state_blend_dict.items() if v == best_val])
 
-        best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
-        best_blended_state = best_blended_state['curr_state']
+        # best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
+        # best_blended_state = best_blended_state['curr_state']
+
+        # retrieve best B/C
+        best_blended_state = self.memory.retrieve(rehearse=False, state='<S%d>' % (2), reward=1)['curr_state']
+        # if not best_blended_state:
+        #     best_blended_state = random.choice(['B', 'C'])
+
         retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
-        if retrieved_memory['reward'] > 0:
-            a = retrieved_memory['response']
-        else:
-            a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+
+        # if retrieved_memory['reward'] > 0:
+            #a = retrieved_memory['response']
+        # else:
+        #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+
+        a = retrieved_memory['response']
+
         self.memory.advance()
         self.markov_state._best_blended_state = best_blended_state
-        self.markov_state._state_blend_dict = {best_blended_state:best_blended_val}
+        # self.markov_state._state_blend_dict = {best_blended_state:best_blended_val}
         return a
 
     def choose_ibl(self):
@@ -993,8 +1003,11 @@ class MarkovIBL(MarkovState):
         r = self.markov_state.received_reward
         # b_value = self.markov_state._b
         # if r > 0:
-        self.memory.retrieve(rehearse=True, state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=r)
-        self.memory.retrieve(rehearse=True, state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
+        # self.memory.retrieve(rehearse=True, state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=r)
+        # self.memory.retrieve(rehearse=True, state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
+        # self.memory.advance(15)
+        self.memory.learn(state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=0)
+        self.memory.learn(state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
         self.memory.advance(15)
 
     def next_state(self, response):
