@@ -806,6 +806,40 @@ class MarkovIBL(MarkovState):
         self.response = key
         self.next_state(key)
 
+    def evaluate_ibl_mb(self):
+        """
+        IBL: MB
+        :return:
+        ################## SETUP MODEL markov-ibl ##################
+        {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
+        'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)},
+        'alpha1': 0.5, 'alpha2': 0.5, 'beta1': 2, 'beta2': 5, 'lambda_parameter': 0.5, 'p_parameter': 0,
+        'w_parameter': 0, 'noise': 0.2, 'decay': 0.5}
+        """
+        best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
+        best_blended_state = best_blended_state['curr_state']
+        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == self.action_space[1] else -1
+
+        # softmax choice rule
+        p = expit(self.beta1 * (best_blended_val + rep * self.p_parameter))
+
+        if random.random() < p:
+            a = retrieved_memory['response']
+        else:
+            a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+
+        self.memory.advance()
+        self.markov_state._best_blended_state = best_blended_state
+        self.markov_state._state_blend_dict = {best_blended_state:best_blended_val}
+        return a
+
     def evaluate_ibl(self):
         # b_value, c_value = [np.round(self.memory.blend("reward", curr_state=state), 4) for state in ['B', 'C']]
         # best_val = np.max([b_value, c_value])
@@ -817,10 +851,52 @@ class MarkovIBL(MarkovState):
         best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
         best_blended_state = best_blended_state['curr_state']
         retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
-        if retrieved_memory['reward'] > 0:
-            a = retrieved_memory['response']
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == self.action_space[1] else -1
+
+        # softmax choice rule
+        p = expit(self.beta1 * (best_blended_val + rep * self.p_parameter))
+        # print('best_blended_val = %.2f, rep, %d, p = %.2f' % (best_blended_val, rep, p))
+        # if retrieved_memory['reward'] > 0:
+        #     a = retrieved_memory['response']
+        # else:
+        #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+
+        # if (retrieved_memory['reward'] > 0) and (p < random.random()):
+        #     a = retrieved_memory['response']
+        # else:
+        #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+
+        a1 = retrieved_memory['response']
+        a2 = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+        # rand_p = random.random()
+        if random.random() < p:
+            if retrieved_memory['reward'] > 0:
+                a = a1
+            else:
+                a = a2
         else:
-            a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+            if retrieved_memory['reward'] > 0:
+                a = a2
+            else:
+                a = a1
+        # if retrieved_memory['reward'] > 0:
+        #     if rand_p < p:
+        #         a = a1
+        #     else:
+        #         a = a2
+        # else:
+        #     if rand_p < p:
+        #         a = a1
+        #     else:
+        #         a = a2
+        # print('blend = %.2f, rep, %d, p = %.2f, a1[%s] a[%s]' % (best_blended_val, rep, p, a1, a))
+
         self.memory.advance()
         self.markov_state._best_blended_state = best_blended_state
         self.markov_state._state_blend_dict = {best_blended_state:best_blended_val}
@@ -909,7 +985,7 @@ class MarkovIBL(MarkovState):
         c_value = max([q[('C', a)] for a in self.action_space])
 
         # Determine the choice
-        if COMMON_TRANS[self.action_space[1]] == 'B':
+        if COMMON_TRANS[self.action_space[0]] == 'B':
             q_mb = (2 * .7 - 1) * (b_value - c_value)
         else:
             q_mb = (2 * .7 - 1) * (c_value - b_value)
@@ -978,9 +1054,9 @@ class MarkovIBL(MarkovState):
         if self.markov_state._curr_stage == '1':
             p = self.evaluate_rlhybrid()
             if random.random() < p:
-                a = self.action_space[1]
-            else:
                 a = self.action_space[0]
+            else:
+                a = self.action_space[1]
             return a
         else:
             return self.get_state2_choice()
@@ -993,8 +1069,8 @@ class MarkovIBL(MarkovState):
         r = self.markov_state.received_reward
         # b_value = self.markov_state._b
         # if r > 0:
-        self.memory.retrieve(rehearse=True, state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=r)
-        self.memory.retrieve(rehearse=True, state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
+        self.memory.learn(state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=r)
+        self.memory.learn(state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
         self.memory.advance(15)
 
     def next_state(self, response):

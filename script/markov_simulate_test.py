@@ -1187,7 +1187,7 @@ class Plot:
     FIG_WIDTH = 1.5 * FIT_HEIGHT
 
     @staticmethod
-    def plot_response_switch(df, model_name, dep_var_suffix=''):
+    def plot_response_switch(df, model_name, dep_var_suffix='', barplot=True):
         """
         Plot state1_stay by pre_received_reward and pre_state_frequency
         :param df:
@@ -1202,16 +1202,25 @@ class Plot:
 
         fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
         fig.suptitle('Summary: Stay Probability \n[%s]' % (model_name))
+        # pointplot
+        if not barplot:
+            sns.pointplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
+                        hue=Plot.TRANS_FACTOR, errorbar=se,
+                        palette=Plot.PALETTE, #dodge=True,
+                        order=['reward', 'non-reward'],
+                        hue_order=['common', 'rare'],
+                        ax=ax)
+        # barplot
+        else:
+            sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
+                        hue=Plot.TRANS_FACTOR, errorbar=se,
+                        palette=Plot.PALETTE, alpha=.8,
+                        order=['reward', 'non-reward'],
+                        hue_order=['common', 'rare'],
+                        ax=ax)
 
-        sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
-                    hue=Plot.TRANS_FACTOR, errorbar=se,
-                    palette=Plot.PALETTE, alpha=.8,
-                    order=['reward', 'non-reward'],
-                    hue_order=['common', 'rare'],
-                    ax=ax)
-
-        for container in ax.containers:
-            ax.bar_label(container, fmt='%.2f', label_type='center')
+            for container in ax.containers:
+                ax.bar_label(container, fmt='%.2f', label_type='center')
         ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
         ax.set_ylim(0, 1.1)
         plt.show()

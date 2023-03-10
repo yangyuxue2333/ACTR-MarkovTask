@@ -919,7 +919,7 @@ class MarkovIBL(MarkovState):
         c_value = max([q[('C', a)] for a in self.action_space])
 
         # Determine the choice
-        if COMMON_TRANS[self.action_space[1]] == 'B':
+        if COMMON_TRANS[self.action_space[0]] == 'B':
             q_mb = (2 * .7 - 1) * (b_value - c_value)
         else:
             q_mb = (2 * .7 - 1) * (c_value - b_value)
@@ -988,9 +988,9 @@ class MarkovIBL(MarkovState):
         if self.markov_state._curr_stage == '1':
             p = self.evaluate_rlhybrid()
             if random.random() < p:
-                a = self.action_space[1]
-            else:
                 a = self.action_space[0]
+            else:
+                a = self.action_space[1]
             return a
         else:
             return self.get_state2_choice()
