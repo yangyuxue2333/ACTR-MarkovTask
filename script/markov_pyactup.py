@@ -650,11 +650,11 @@ class MarkovState():
 class MarkovIBL(MarkovState):
     """A class for recording a Markov trial"""
 
-    def __init__(self, model='markov-rlmf', verbose=True, **params):
+    def __init__(self, model='markov-rl-mf', verbose=True, **params):
         """Inits a markov trial
         stimuli contain a list of markov states, e.g. [("A1", "A2"), ("B1", "B2")]
         """
-        assert (model in ('markov-ibl', 'markov-rlmf', 'markov-rlmb', 'markov-rlhybrid'))
+        assert (model in ('markov-ibl-mb', 'markov-ibl-hybrid', 'markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid'))
         self.kind = model
         self.index = 0
 
@@ -680,7 +680,7 @@ class MarkovIBL(MarkovState):
 
         self.q = {(s, a): 0 for s in self.state_space for a in self.action_space}
         self.p = {(s, a): 0 for s in self.state_space for a in self.action_space}
-        if self.kind == 'markov-rlhybrid':
+        if self.kind == 'markov-rl-hybrid':
             self.q_mf = {(s, a): 0 for s in self.state_space for a in self.action_space}
             self.q_mb = {(s, a): 0 for s in self.state_space for a in self.action_space}
 
@@ -791,14 +791,16 @@ class MarkovIBL(MarkovState):
 
     def respond_to_key_press(self):
         key = None
-        if self.kind == 'markov-ibl':
+        if self.kind == 'markov-ibl-mb':
             key = self.choose_ibl()
-        elif self.kind =='markov-rlmf':
+        elif self.kind == 'markov-ibl-hybrid':
+            key = self.choose_ibl()
+        elif self.kind =='markov-rl-mf':
             key = self.choose_rlmf()
-        elif self.kind =='markov-rlmb':
+        elif self.kind =='markov-rl-mb':
             key = self.choose_rlmb()
         # simple mf/mb hybrid:
-        elif self.kind =='markov-rlhybrid':
+        elif self.kind =='markov-rl-hybrid':
             key = self.choose_rlhybrid()
         else:
             print('error model', self.kind)
@@ -806,7 +808,7 @@ class MarkovIBL(MarkovState):
         self.response = key
         self.next_state(key)
 
-    def evaluate_ibl_mb(self):
+    def evaluate_ibl_hybrid(self):
         """
         IBL: MB
         :return:
@@ -837,10 +839,58 @@ class MarkovIBL(MarkovState):
 
         self.memory.advance()
         self.markov_state._best_blended_state = best_blended_state
-        self.markov_state._state_blend_dict = {best_blended_state:best_blended_val}
+        self.markov_state._best_blended_value = best_blended_val
         return a
 
-    def evaluate_ibl(self):
+    def evaluate_ibl_mb(self):
+        """
+        IBL: two blended value version
+        :return:
+        ################## SETUP MODEL markov-ibl ##################
+        {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
+        'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)},
+        'alpha1': 0.5, 'alpha2': 0.5, 'beta1': 5, 'beta2': 5, 'lambda_parameter': 0.2, 'p_parameter': 0,
+        'w_parameter': 0, 'noise': 0.1, 'decay': 0.5}
+        """
+        # blend B and C
+        b_value, c_value = [self.memory.blend("reward", curr_state=state) for state in ['B', 'C']]
+        self.markov_state._b_value = b_value
+        self.markov_state._c_value = c_value
+        best_blended_val = np.max([b_value, c_value])
+
+        # decide best_blended_state
+        d = dict(zip(['B', 'C'], [b_value, c_value]))
+        best_blended_state = random.choice([k for k, v in d.items() if v == best_blended_val])
+
+        # retrieve response
+        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == self.action_space[1] else -1
+
+        # softmax choice rule
+        p = expit(self.beta1 * (best_blended_val + rep * self.p_parameter))
+
+        if random.random() < p:
+            a = retrieved_memory['response']
+        else:
+            a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+
+        self.memory.advance()
+        self.markov_state._best_blended_state = best_blended_state
+        self.markov_state._best_blended_value = best_blended_val
+        return a
+
+    def evaluate_ibl2(self):
+        """
+        Complicated evaluate (deprecated for now)
+        Not fully undestand...
+        :return:
+        """
         # b_value, c_value = [np.round(self.memory.blend("reward", curr_state=state), 4) for state in ['B', 'C']]
         # best_val = np.max([b_value, c_value])
 
@@ -874,32 +924,34 @@ class MarkovIBL(MarkovState):
 
         a1 = retrieved_memory['response']
         a2 = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-        # rand_p = random.random()
-        if random.random() < p:
-            if retrieved_memory['reward'] > 0:
-                a = a1
-            else:
-                a = a2
-        else:
-            if retrieved_memory['reward'] > 0:
-                a = a2
-            else:
-                a = a1
-        # if retrieved_memory['reward'] > 0:
-        #     if rand_p < p:
+        rand_p = random.random()
+        # this commented block show hybrid pattern
+        # if random.random() < p:
+        #     if retrieved_memory['reward'] > 0:
         #         a = a1
         #     else:
         #         a = a2
         # else:
-        #     if rand_p < p:
-        #         a = a1
-        #     else:
+        #     if retrieved_memory['reward'] > 0:
         #         a = a2
+        #     else:
+        #         a = a1
+
+        if retrieved_memory['reward'] > 0:
+            if rand_p < p:
+                a = a1
+            else:
+                a = a2
+        else:
+            if rand_p < p:
+                a = a1
+            else:
+                a = a2
         # print('blend = %.2f, rep, %d, p = %.2f, a1[%s] a[%s]' % (best_blended_val, rep, p, a1, a))
 
         self.memory.advance()
         self.markov_state._best_blended_state = best_blended_state
-        self.markov_state._state_blend_dict = {best_blended_state:best_blended_val}
+        self.markov_state._best_blended_value = best_blended_val
         return a
 
     def choose_ibl(self):
@@ -908,7 +960,12 @@ class MarkovIBL(MarkovState):
         :return:
         """
         if self.markov_state._curr_stage == '1':
-            a = self.evaluate_ibl()
+            if self.kind == 'markov-ibl-mb':
+                a = self.evaluate_ibl_mb()
+            elif self.kind == 'markov-ibl-hybrid':
+                a = self.evaluate_ibl_hybrid()
+            else:
+                print("Error..", self.kind)
             return a
         else:
             # a = self.memory.retrieve(curr_state=self.markov_state._curr_state, reward=self._r1)['response']
@@ -1062,15 +1119,55 @@ class MarkovIBL(MarkovState):
             return self.get_state2_choice()
 
     def encode_memory(self):
+        """
+        Simple encode memory of current trial
+        :return:
+        """
         s = 'A'
         s_ = self.markov_state._curr_state
         a = self.markov_state.state1_response
         a_ = self.markov_state.state2_response
         r = self.markov_state.received_reward
-        # b_value = self.markov_state._b
+
         # if r > 0:
         self.memory.learn(state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=r)
         self.memory.learn(state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
+        self.memory.advance(15)
+
+    def encode_memory_prediction_error(self):
+        """
+        Learn the prediction error between blended value and actual reward
+        :return:
+        """
+        s = 'A'
+        s_ = self.markov_state._curr_state
+        a = self.markov_state.state1_response
+        a_ = self.markov_state.state2_response
+        r = self.markov_state.received_reward
+
+
+        b_value, c_value = self.markov_state._b_value, self.markov_state._b_value
+        r1, r0 = REWARD_DICT['B1']
+
+        if (s_ == 'B') and (r > 0):
+            learn_b = r1 - b_value
+            learn_c = r0 - c_value
+        elif (s_ == 'B') and (r <= 0):
+            learn_b = r0 - b_value
+            learn_c = r1 - c_value
+        elif (s_ == 'C') and (r > 0):
+            learn_b = r0 - b_value
+            learn_c = r1 - c_value
+        elif (s_ == 'C') and (r <= 0):
+            learn_b = r1 - b_value
+            learn_c = r0 - c_value
+        else:
+            pass
+        learn_a = self.lambda_parameter * r
+        learn_a, learn_b, learn_c = np.round(learn_a, 2), np.round(learn_b, 2), np.round(learn_c, 2)
+        self.memory.learn(state='<S%d>' % (1), curr_state='A', next_state=s_, response=a, reward=learn_a)
+        self.memory.learn(state='<S%d>' % (2), curr_state='B', next_state=None, response=a_, reward=learn_b)
+        self.memory.learn(state='<S%d>' % (2), curr_state='C', next_state=None, response=a_, reward=learn_c)
         self.memory.advance(15)
 
     def next_state(self, response):
@@ -1102,7 +1199,10 @@ class MarkovIBL(MarkovState):
         # log
         if self.markov_state.state == 3:
             # update q
-            if self.kind == 'markov-ibl':
+            if self.kind == 'markov-ibl-mb':
+                # self.encode_memory() # this will wipe out the difference between common/rare
+                self.encode_memory_prediction_error()
+            elif self.kind.startswith('markov-ibl-hybrid'):
                 self.encode_memory()
             elif self.kind.startswith('markov-rl'):
                 self.update_q()
@@ -1236,8 +1336,11 @@ class MarkovIBL(MarkovState):
         Prepare df of blended values
         :return:
         """
-        df = pd.DataFrame({**s._state_blend_dict, 'best_blended_state':s._best_blended_state} for s in self.log)
-        df.columns = ['state1_blended_b', 'state1_blended_c', 'best_blended_state']
+        rows = [[
+            s._best_blended_state,
+            s._best_blended_value,
+        ] for s in self.log]
+        df = pd.DataFrame(rows, columns=['blended_state', 'blended_value'])
         return df
 
     def df_q_table(self):
@@ -1250,7 +1353,7 @@ class MarkovIBL(MarkovState):
         LL += np.log(prob)
         :return:
         """
-        assert (self.kind in ('markov-rlmf', 'markov-rlmb'))
+        assert (self.kind in ('markov-rl-mf', 'markov-rl-mb'))
         return np.sum([np.log(s._state1_p) for s in self.log])
 
 
@@ -1292,7 +1395,7 @@ class MarkovSimulation():
     GROUP_VAR = ['pre_received_reward', 'pre_state_frequency']
 
     @staticmethod
-    def run_single_simulation(model='markov-ibl', n=200, verbose=False, **params):
+    def run_single_simulation(model='markov-ibl-mb', n=200, verbose=False, **params):
 
         m = MarkovIBL(model=model, verbose=verbose, **params)
         m.memory.activation_history = []
@@ -1300,7 +1403,7 @@ class MarkovSimulation():
         return m
 
     @staticmethod
-    def run_simulations(model='markov-ibl', e=1, n=200, verbose=False, **params):
+    def run_simulations(model='markov-ibl-mb', e=1, n=200, verbose=False, **params):
         df_list = []
         for i in tqdm(range(e)):
             m = MarkovIBL(model=model, verbose=False)
