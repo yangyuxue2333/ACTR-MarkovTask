@@ -8,6 +8,7 @@ from scipy.stats import norm
 import itertools
 import matplotlib.pyplot as plt
 import seaborn as sns
+from math import pi
 
 global convergence
 convergence = 100
@@ -1357,4 +1358,112 @@ class Plot:
 
         ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
         ax.set_ylim(0, 1)
+        plt.show()
+
+    @staticmethod
+    def plot_parameter_radar(df, title=''):
+        """
+        df format: every parameter is a column, must has a "group" column, must has index starting from 0
+        :param df:
+        :param title:
+        :return:
+        """
+        # ------- PART 2: Apply the function to all individuals
+        # initialize the figure
+        my_dpi = 96
+        plt.figure(figsize=(1000 / my_dpi, 1000 / my_dpi), dpi=my_dpi)
+
+        # Create a color palette:
+        my_palette = plt.cm.get_cmap("Set1", len(df.index))
+
+        # Loop to plot
+        for row in range(0, len(df.index)):
+            # number of variable
+            categories = list(df)[:-1]
+            N = len(categories)
+
+            # What will be the angle of each axis in the plot? (we divide the plot / number of variable)
+            angles = [n / float(N) * 2 * pi for n in range(N)]
+            angles += angles[:1]
+
+            # Initialise the spider plot
+            ax = plt.subplot(2, 2, row + 1, polar=True, )
+
+            # If you want the first axis to be on top:
+            ax.set_theta_offset(pi / 2)
+            ax.set_theta_direction(-1)
+
+            # Draw one axe per variable + add labels labels yet
+            plt.xticks(angles[:-1], categories, color='gray', size=10)
+
+            # Draw ylabels
+            min_value = df.min(numeric_only=True).min()
+            max_value = df.max(numeric_only=True).max()
+            min_max = np.linspace(min_value, max_value, num=5, endpoint=True, dtype=float).round(2)
+            min_max_label = [str(i) for i in min_max]
+            ax.set_rlabel_position(0)
+            plt.yticks(min_max, min_max_label, color="grey", size=7)
+            plt.ylim(min_value, max_value)
+
+            # Ind1
+            values = df.loc[row].drop('group').values.flatten().tolist()
+            values += values[:1]
+
+            # Define Color
+            color = my_palette(row)
+
+            ax.plot(angles, values, color=color, linewidth=2, linestyle='solid')
+            ax.fill(angles, values, color=color, alpha=0.4)
+
+            # Add a title
+            plt.title('%s \nparam_id [%s]' % (title, df['group'][row]), size=11, color=color, y=1.1)
+    @staticmethod
+    def plot_parameter_radar_comb(df, title=''):
+        # ------- PART 1: Create background
+        # number of variable
+        categories = list(df)[:-1]
+        N = len(categories)
+
+        my_palette = plt.cm.get_cmap("Set1", len(df.index))
+
+        # What will be the angle of each axis in the plot? (we divide the plot / number of variable)
+        angles = [n / float(N) * 2 * pi for n in range(N)]
+        angles += angles[:1]
+
+        # Initialise the spider plot
+        my_dpi = 96
+        plt.figure(figsize=(500 / my_dpi, 500 / my_dpi), dpi=my_dpi)
+        ax = plt.subplot(111, polar=True)
+
+        # If you want the first axis to be on top:
+        ax.set_theta_offset(pi / 2)
+        ax.set_theta_direction(-1)
+
+        # Draw one axe per variable + add labels
+        plt.xticks(angles[:-1], categories)
+
+        # Draw ylabels
+        ax.set_rlabel_position(0)
+        # plt.yticks([10,20,30], ["10","20","30"], color="grey", size=7)
+        # plt.ylim(0,40)
+
+        # ------- PART 2: Add plots
+
+        # Plot each individual = each line of the data
+        # I don't make a loop, because plotting more than 3 groups makes the chart unreadable
+        for row in range(0, len(df.index)):
+            color = my_palette(row)
+
+            # Ind1
+            values = df.loc[row].drop('group').values.flatten().tolist()
+            values += values[:1]
+            ax.plot(angles, values, color=color, alpha=0.3, linewidth=3, linestyle='solid',
+                    label="%s" % (df.loc[row, 'group']))
+            ax.fill(angles, values, color=color, alpha=0.3)
+
+        # Add legend
+        plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+
+        # Show the graph
+        plt.title(title)
         plt.show()
