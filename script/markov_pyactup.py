@@ -1625,9 +1625,10 @@ class MarkovEstimateion():
     def load_subject_data(subject_dir, subject_id=None):
         df = pd.concat([pd.read_csv(f, index_col=0) for f in glob.glob(os.path.join(subject_dir, '*', '', 'test.csv'))], axis=0)
 
-        # some processing
-        df['state1_response'] = df['state1_response'].replace({48.0: 'k', 49.0: 'f'})
-        df['state2_response'] = df['state2_response'].replace({48.0: 'k', 49.0: 'f'})
+        # choice processing
+        # state1_response = 1 (49, f), 2 (48, k)
+        df['state1_response'] = df['state1_response'].replace({1: 'f', 2: 'k'})
+        df['state2_response'] = df['state2_response'].replace({1: 'f', 2: 'k'})
         try:
             return df[df['subject_id']=='sub%s' % (subject_id)]
         except:
@@ -1728,14 +1729,18 @@ class MarkovEstimateion():
         # format opt results
         param_names = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay']
         best_fit_param = dict(zip(param_names, opt_result['x']))
-        df = pd.DataFrame({**best_fit_param, 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
+        df = pd.DataFrame({**best_fit_param, 'maxLL':-1*opt_result['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
 
         # define dest path
         dest_file = os.path.join(save_output, '%s-sub%s-opt-result.csv' % (subject_id, estimate_model))
 
         # append optimization if exist
-        mode = 'a' if os.path.exists(dest_file) else 'w'
-        header = False if os.path.exists(dest_file) else True
+        if os.path.exists(dest_file):
+            mode = 'a'
+            header = False
+        else:
+            mode ='w'
+            header = True
         df.to_csv(dest_file, index=False, mode=mode, header=header)
         return df
 
