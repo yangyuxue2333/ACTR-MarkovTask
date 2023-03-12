@@ -1693,21 +1693,49 @@ class MarkovEstimateion():
         return -1 * self.estimate_function(param_values=param_values)
 
     @staticmethod
-    def optimization_function(df, x0, param_bounds=None):
+    def optimization_function(df, x0, param_bounds=None, estimate_model='markov-rl-mf', save_output=False):
         """
         Optimization
         :param df:
         :param x0: ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay']
         :param param_bounds:
         :return:
+
+         >> init_params = [0.1, 5, 0.1, 1, 0, 0.1, 0.1]
+         >> param_bounds = [(0, 1), (0, 10), (0, 1), (1, 1), (0, 0), (0,1), (0,1)]
+         >> res = MarkovEstimateion.optimization_function(df=df, x0=init_params, param_bounds=param_bounds)
         """
         # define default parameter bounds
         if not param_bounds:
             param_bounds = [(0.01, 1) for i in range(len(x0))]
         # create an estimation instance
-        # pass in data
-        est = MarkovEstimateion(data=df)
+        # define estimat model name and pass in data
+        est = MarkovEstimateion(data=df, model_name=estimate_model)
 
         # start optimization
         res = opt.minimize(est.v_function, x0=x0, bounds=param_bounds, method="Nelder-Mead")
+
+        # save outout
+        if save_output:
+            MarkovEstimateion.save_optimization_output(opt_result=res,
+                                                       estimate_model=estimate_model,
+                                                       subject_id=df['subject_id'].unique()[0],
+                                                       save_output=save_output)
         return res
+
+    @staticmethod
+    def save_optimization_output(opt_result, estimate_model, subject_id, save_output):
+        # format opt results
+        param_names = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay']
+        best_fit_param = dict(zip(param_names, opt_result['x']))
+        df = pd.DataFrame({**best_fit_param, 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
+
+        # define dest path
+        dest_file = os.path.join(save_output, '%s-sub%s-opt-result.csv' % (subject_id, estimate_model))
+
+        # append optimization if exist
+        mode = 'a' if os.path.exists(dest_file) else 'w'
+        header = False if os.path.exists(dest_file) else True
+        df.to_csv(dest_file, index=False, mode=mode, header=header)
+        return df
+
