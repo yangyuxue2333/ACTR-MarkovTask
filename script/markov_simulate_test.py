@@ -531,21 +531,22 @@ class MaxLogLikelihood:
         for subject_id in subject_ids:
             # read raw subject data
             df = pd.read_csv(os.path.join(main_dir, raw_subject_dir, 'mbmf_%s.csv' % (subject_id))).dropna(
-                subset='trial_stage', axis=0)
+                subset=['trial_stage'], axis=0)
             # select useful columns
+            # choice=1 (key 49) choice=2(key 48), otherwise na
             usecols = ['subject_id', 'trial_index', 'practice_trial', 'reward', 'transition', 'transition_type',
-                       'key_press', 'trial_stage', 'rt']
+                       'choice', 'trial_stage', 'rt']
 
             # process practice data
             df_practice = df[df['practice_trial'] == 'practice'][usecols].sort_values(by='trial_index')
 
-            df_practice1 = df_practice[df_practice['trial_stage'] == '1'][['subject_id', 'trial_index', 'key_press', 'rt']]
+            df_practice1 = df_practice[df_practice['trial_stage'] == '1'][['subject_id', 'trial_index', 'choice', 'rt']]
             df_practice1['index'] = np.arange(len(df_practice1))
-            df_practice1 = df_practice1.rename(columns={'key_press': 'state1_response', 'rt': 'state1_response_time'}).drop(columns=['trial_index'])
+            df_practice1 = df_practice1.rename(columns={'choice': 'state1_response', 'rt': 'state1_response_time'}).drop(columns=['trial_index'])
 
-            df_practice2 = df_practice[df_practice['trial_stage'] == '2'][['subject_id', 'trial_index', 'transition', 'reward', 'key_press', 'rt']]
+            df_practice2 = df_practice[df_practice['trial_stage'] == '2'][['subject_id', 'trial_index', 'transition', 'reward', 'choice', 'rt']]
             df_practice2['index'] = np.arange(len(df_practice2))
-            df_practice2 = df_practice2.rename(columns={'key_press': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
+            df_practice2 = df_practice2.rename(columns={'choice': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
                          'transition': 'state_frequency'}).drop(columns=['trial_index'])
 
             # unstack df to wide format
@@ -561,16 +562,16 @@ class MaxLogLikelihood:
 
             # process test data
             df_test = df[df['practice_trial'] == 'real'][usecols].sort_values(by='trial_index')
-            df_test1 = df_test[df_test['trial_stage'] == '1'][['subject_id', 'trial_index', 'key_press', 'rt']]
+            df_test1 = df_test[df_test['trial_stage'] == '1'][['subject_id', 'trial_index', 'choice', 'rt']]
             df_test1['index'] = np.arange(len(df_test1))
-            df_test1 = df_test1.rename(columns={'key_press': 'state1_response', 'rt': 'state1_response_time'}).drop(
+            df_test1 = df_test1.rename(columns={'choice': 'state1_response', 'rt': 'state1_response_time'}).drop(
                 columns=['trial_index'])
 
             df_test2 = df_test[df_test['trial_stage'] == '2'][
-                ['subject_id', 'trial_index', 'transition', 'reward', 'key_press', 'rt']]
+                ['subject_id', 'trial_index', 'transition', 'reward', 'choice', 'rt']]
             df_test2['index'] = np.arange(len(df_test2))
             df_test2 = df_test2.rename(
-                columns={'key_press': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
+                columns={'choice': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
                          'transition': 'state_frequency'}).drop(columns=['trial_index'])
 
             # unstack data to wide format
