@@ -1571,7 +1571,8 @@ class MarkovSimulation():
     @staticmethod
     def run_single_simulation(model='markov-ibl-mb', n=200, verbose=False, **params):
 
-        m = MarkovIBL(model=model, verbose=verbose, **params)
+        m = MarkovIBL(model=model, verbose=verbose)
+        m.update_parameters(**params)
         m.memory.activation_history = []
         m.run_experiment(n=n)
         return m
@@ -1633,6 +1634,36 @@ class MarkovEstimateion():
             return df[df['subject_id']=='sub%s' % (subject_id)]
         except:
             return df
+
+    @staticmethod
+    def load_opt_parameters(opt_dir, subject_id, estimate_model):
+        """
+        Load optimized parameter data
+        :param opt_dir: os.path.join(main_dir, 'data', 'model', 'param_optimization')
+        :param subject_id: os.path.join(main_dir, 'data', 'human', 'online_data')
+        :param estimate_model: 'markov-rl-mf'
+        :return:
+            d {'alpha': 0.1674,
+                 'beta': 9.9208,
+                 'lambda_parameter': 0.7553,
+                 'p_parameter': 0.051,
+                 'w_parameter': 0.0,
+                 'temperature': 0.1,
+                 'decay': 0.1,
+                 'maxLL': -9.6775,
+                 'estimate_model': 'markov-rl-mf',
+                 'subject_id': 'sub1'}
+            params: {'alpha': 0.1674,
+                 'beta': 9.9208,
+                 'lambda_parameter': 0.7553,
+                 'p_parameter': 0.051,
+                 'w_parameter': 0.0}
+        """
+        f = glob.glob(os.path.join(opt_dir, 'sub%s*%s*.csv' % (subject_id, estimate_model)))[0]
+        df = pd.read_csv(f)
+        d = df.loc[df['maxLL'].idxmax()].to_dict()
+        params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
+        return d, params
 
     @staticmethod
     def boltzmann(options, values, temperature):
@@ -1732,7 +1763,7 @@ class MarkovEstimateion():
         df = pd.DataFrame({**best_fit_param, 'maxLL':-1*opt_result['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
 
         # define dest path
-        dest_file = os.path.join(save_output, '%s-sub%s-opt-result.csv' % (subject_id, estimate_model))
+        dest_file = os.path.join(save_output, '%s-%s-opt-result.csv' % (subject_id, estimate_model))
 
         # append optimization if exist
         if os.path.exists(dest_file):
