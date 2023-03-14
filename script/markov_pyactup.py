@@ -1908,7 +1908,7 @@ class MarkovEstimation():
         return -1 * self.estimate_function(param_values=param_values)
 
     @staticmethod
-    def optimization_function(df, x0, param_bounds=None, estimate_model='markov-rl-mf', save_output=False):
+    def optimization_function(df, x0, param_bounds, estimate_model='markov-rl-mf', save_output=False):
         """
         Optimization
         :param df:
@@ -1918,13 +1918,11 @@ class MarkovEstimation():
 
          >> res = MarkovEstimateion.optimization_function(df=df, x0=init_params, param_bounds=param_bounds)
         """
-        # define default parameter bounds
-        if not param_bounds:
-            param_bounds = [(0.01, 1) for i in range(len(x0))]
         # create an estimation instance
         # define estimat model name and pass in data
         # est = MarkovEstimation(data=df, model_name=estimate_model)
-        est = MarkovEstimation(subject_id='1', model_name=estimate_model, verbose=0)
+        est = MarkovEstimation(subject_id=None, model_name=estimate_model, verbose=0)
+        est.data = df
 
         # start optimization
         res = opt.minimize(est.v_function, x0=x0, bounds=param_bounds, method="Nelder-Mead")
