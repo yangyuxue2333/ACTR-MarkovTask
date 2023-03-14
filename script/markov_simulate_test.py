@@ -1362,13 +1362,21 @@ class Plot:
         plt.show()
 
     @staticmethod
-    def plot_parameter_radar(df, title=''):
+    def plot_parameter_radar(df, title='', combine=False):
         """
         df format: every parameter is a column, must has a "group" column, must has index starting from 0
         :param df:
         :param title:
         :return:
         """
+        assert 'group' in df.columns
+        df.index = range(len(df)) # make sure the index is correct
+
+        # could plot together
+        if combine:
+            Plot.plot_parameter_radar_comb(df, title=title)
+            return
+
         # ------- PART 2: Apply the function to all individuals
         # initialize the figure
         my_dpi = 96
@@ -1418,6 +1426,7 @@ class Plot:
 
             # Add a title
             plt.title('%s \nparam_id [%s]' % (title, df['group'][row]), size=11, color=color, y=1.1)
+
     @staticmethod
     def plot_parameter_radar_comb(df, title=''):
         # ------- PART 1: Create background

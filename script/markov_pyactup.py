@@ -35,6 +35,7 @@ from scipy import stats
 from pandas import CategoricalDtype
 import pprint
 from scipy.special import expit
+import scipy.optimize as opt
 from tqdm.auto import tqdm
 import glob
 
@@ -59,10 +60,13 @@ COMMON_TRANS = {
 }
 
 # parameter names
-RL_PARAMETER_NAMES = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter']
-IBL_PARAMETER_NAMES = ['temperature', 'decay', 'lambda_parameter', 'p_parameter']
-PARAMETER_NAMES = list(set(RL_PARAMETER_NAMES + IBL_PARAMETER_NAMES))
+RL_PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter']
+IBL_PARAMETER_NAMES = ['temperature', 'decay', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter']
+PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay']
 TASK_PARAMETER_NAMES = ['MARKOV_PROBABILITY','REWARD_PROBABILITY', 'REWARD']
+
+# all possible model names
+MODEL_NAMES = ['markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid', 'markov-ibl-mb', 'markov-ibl-hybrid']
 
 
 class MarkovStimulus:
@@ -513,15 +517,15 @@ class MarkovIBL(MarkovState):
         self.alpha = .2  # learning rate
         # self.alpha1 = .2  # learning rate
         # self.alpha2 = .2  # learning rate
-        self.beta = 5  # exploration rate
-        # self.beta1 = 5  # exploration rate
-        # self.beta2 = 5  # exploration rate
+        self.beta = 5  # stage2 exploration rate
+        self.beta_mf = 5  # stage1 mf exploration rate
+        self.beta_mb = 5  # stage1 mb exploration rate
 
         self.temperature = .2  # temperature parameter
         self.decay = .2  # decay parameter
         self.lambda_parameter = .2  # decay rate
         self.p_parameter = 0  # perseveration rate
-        self.w_parameter = 0  # w = 0: pure MF
+        # self.w_parameter = 0  # w = 0: pure MF
 
         # IBL parameters
         self.memory.noise = self.temperature
@@ -536,12 +540,12 @@ class MarkovIBL(MarkovState):
                                 'alpha': self.alpha,  # learning rate
                                 # 'alpha1' : self.alpha1,  # learning rate
                                 # 'alpha2' : self.alpha2,  # learning rate
-                                'beta': self.beta,  # learning rate
-                                # 'beta1' : self.beta1,  # exploration rate
-                                # 'beta2' : self.beta2,  # exploration rate
+                                'beta': self.beta,  # exploration rate at second state
+                                'beta_mf' : self.beta_mf,  # exploration rate
+                                'beta_mb' : self.beta_mb,  # exploration rate
                                 'lambda_parameter' : self.lambda_parameter,  # decay rate
                                 'p_parameter' : self.p_parameter,  # decay rate
-                                'w_parameter' : self.w_parameter,  # w = 0: pure MF
+                                # 'w_parameter' : self.w_parameter,  # w = 0: pure MF
                                 # IBL Parameter
                                 'temperature' : self.temperature,  # temperature rate
                                 'decay' : self.decay  # decay rate
@@ -561,13 +565,13 @@ class MarkovIBL(MarkovState):
         # self.alpha1 = self.task_parameters['alpha1']
         # self.alpha2 = self.task_parameters['alpha2']
         self.beta = self.task_parameters['beta']
-        # self.beta1 = self.task_parameters['beta1']
-        # self.beta2 = self.task_parameters['beta2']
+        self.beta_mf = self.task_parameters['beta_mf']
+        self.beta_mb = self.task_parameters['beta_mb']
         self.temperature = self.task_parameters['temperature']
         self.decay = self.task_parameters['decay']
         self.lambda_parameter = self.task_parameters['lambda_parameter']
         self.p_parameter = self.task_parameters['p_parameter']
-        self.w_parameter = self.task_parameters['w_parameter']
+        # self.w_parameter = self.task_parameters['w_parameter']
 
         # update IBL parameters
         self.memory.noise = self.temperature
@@ -704,6 +708,9 @@ class MarkovIBL(MarkovState):
         dict_list = dfr.to_dict('records')
         return dict_list
 
+    # =================================================== #
+    # PROCEED FROM DATA
+    # =================================================== #
 
     def respond_from_data(self, response1, response2, received_reward, state2, state_frequency, reward_frequency):
         """
@@ -739,21 +746,30 @@ class MarkovIBL(MarkovState):
 
             self.markov_state.reward_predtermined(received_reward=received_reward, reward_frequency=reward_frequency)
 
-        # log
         if self.markov_state.state == 3:
-            # update q
+            # update q based on algorithm
             if self.kind == 'markov-ibl-mb':
-                self.encode_memory_prediction_error()          # not pure MB some degree of hybrid (the best so far, slow)
-            elif self.kind.startswith('markov-ibl-hybrid'):
+                self.encode_memory_prediction_error()  # not pure MB some degree of hybrid (the best so far, slow)
+
+            elif self.kind == 'markov-ibl-hybrid':
                 self.encode_memory()
+                self.update_q()  # RL-MF Q-Learning
+
             elif self.kind.startswith('markov-rl'):
                 self.update_q()
             else:
                 pass
+
             # log actr trace
             self.log.append(self.markov_state)
+
+            # display trial
             if self.verbose:
                 print(self.markov_state)
+
+    # =================================================== #
+    # ESTIMATE PARAMETER FROM DATA
+    # =================================================== #
 
     def estimate_state1_response_LL(self, key):
         """
@@ -767,94 +783,96 @@ class MarkovIBL(MarkovState):
             p_parameter
         """
         q = self.q.copy()
+
+        # control stickness
         try:
             prev_choice = self.log[-1].state1_response
         except:
             prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[0] else -1
+        rep = 1 if prev_choice == key else -1
 
-        # Estimate q based on different algorithm
-        # RL-MF
-        if self.kind == 'markov-rl-mf':
-            estimated_q = q[('A', key)]
+        # Estimate q based on different algorithms
+        # RL
+        if self.kind.startswith('markov-rl-'):
+            # evaluate both
+            # self.evaluate_rl_mf(response=key)
+            # self.evaluate_rl_mb(response=key)
+            self.evaluate_rl_hybrid(response=key)
+            mf_value = self.markov_state._mf_value  # self.beta_mf * q_mf
+            mb_value = self.markov_state._mb_value  # self.beta_mb * q_mb
+            hybrid_value = self.markov_state._mf_value + self.markov_state._mb_value
 
-        # RL-MB
-        elif self.kind == 'markov-rl-mb':
-            b_value = max([q[('B', a)] for a in self.action_space])
-            c_value = max([q[('C', a)] for a in self.action_space])
+            # RL-MF
+            if self.kind == 'markov-rl-mf':
+                estimated_q = mf_value
 
-            # Determine the choice
-            if COMMON_TRANS[key] == 'B':
-                estimated_q = (2 * .7 - 1) * (b_value - c_value)
+            # RL-MB
+            elif self.kind == 'markov-rl-mb':
+                estimated_q =  mb_value
+
+            # RL-Hybrid
+            elif self.kind == 'markov-rl-hybrid':
+                estimated_q = hybrid_value
             else:
-                estimated_q = (2 * .7 - 1) * (c_value - b_value)
+                pass
 
-        # RL-Hybrid
-        elif self.kind == 'markov-rl-hybrid':
-            q_mf = q[('A', key)]
-            b_value = max([q[('B', a)] for a in self.action_space])
-            c_value = max([q[('C', a)] for a in self.action_space])
+        # IBL
+        elif self.kind.startswith('markov-ibl-'):
+            self.evaluate_ibl_hybrid(response=key)
+            mb_value = self.markov_state._mb_value
+            hybrid_value = self.markov_state._hybrid_value
 
-            # Determine the choice
-            if COMMON_TRANS[key] == 'B':
-                q_mb = (2 * .7 - 1) * (b_value - c_value)
-            else:
-                q_mb = (2 * .7 - 1) * (c_value - b_value)
-            estimated_q = self.w_parameter * q_mb + (1 - self.w_parameter) * q_mf
+            # IBL-MB
+            if self.kind == 'markov-ibl-mb':
+                estimated_q = mb_value
 
-        # IBL-MB
-        elif self.kind == 'markov-ibl-mb':
-            self.evaluate_ibl_mb()
-            estimated_q = self.markov_state._best_blended_value
-
-        # IBL-Hybrid
-        elif self.kind == 'markov-ibl-hybrid':
-            self.evaluate_ibl_hybrid()
-            estimated_q = self.markov_state._best_blended_value
+            # IBL-Hybrid
+            elif self.kind == 'markov-ibl-hybrid':
+                estimated_q = hybrid_value
         else:
             pass
 
         # estimate log-likelihood
-        # LL += log(p)
-        p = expit(self.beta * (estimated_q + rep * self.p_parameter))
+        p = expit(estimated_q + rep * self.p_parameter)
         return np.log(max(p, 10e-10))
 
     # =================================================== #
     # EVALUATE STATE2
     # =================================================== #
 
-    def evaluate_rl_mf(self):
+    def evaluate_rl_mf(self, response=None):
         """
-        Evaluate Q table using RL-MF
-        >> best parameter combination
-            alpha=.5,
-            beta=5,
-            p_parameter=0,
-            lambda_parameter=.6
+        Evaluate Q table using RL-MF. If no response is provided, always evaluate LEFT
         :return:
         """
         assert self.markov_state._curr_stage == '1'
         q = self.q.copy()
 
         # Q(MF)
-        q_mf = q[('A', self.action_space[0])] - q[('A', self.action_space[1])]
+        if not response:
+            response = self.action_space[0] # always eval left
+        q_mf = q[('A', response)] - q[('A', MarkovIBL.return_alternative_item(self.action_space, response))]
+
+        # scale by free parameter beta_mf
+        mf_value = self.beta_mf * q_mf
 
         # rep(a)
         try:
             prev_choice = self.log[-1].state1_response
         except:
             prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[0] else -1
+        rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
         # p = expit(self.beta * (q[('A', self.action_space[0])] - q[('A', self.action_space[1])] + rep * self.p_parameter))
-        p = expit(self.beta * (q_mf + rep * self.p_parameter))
+        p = expit(mf_value + rep * self.p_parameter)
 
-        self.markov_state._q_mf = q_mf
+        # save expecetd value of mf = beta_mb * q_value
+        self.markov_state._mf_value = mf_value
         self.markov_state._state1_p = p
         return p
 
-    def evaluate_rl_mb(self):
+    def evaluate_rl_mb(self, response=None):
         """
         Evaluate Q value using RL-MB
          >> best parameter combination
@@ -865,32 +883,39 @@ class MarkovIBL(MarkovState):
         :return:
         """
         assert self.markov_state._curr_stage == '1'
+        # Q(MF)
+        if not response:
+            response = self.action_space[0]  # always eval left
+
         q = self.q.copy()
         b_value = max([q[('B', a)] for a in self.action_space])
         c_value = max([q[('C', a)] for a in self.action_space])
 
         # Determine the choice
-        if COMMON_TRANS[self.action_space[0]] == 'B':
+        if COMMON_TRANS[response] == 'B':
             q_mb = (2 * .7 - 1) * (b_value - c_value)
         else:
             q_mb = (2 * .7 - 1) * (c_value - b_value)
+
+        # scale by beta_mb
+        mb_value = self.beta_mb * q_mb
 
         # rep(a)
         try:
             prev_choice = self.log[-1].state1_response
         except:
             prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[1] else -1
+        rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(self.beta * (q_mb + rep * self.p_parameter)) # p_right
+        p = expit(mb_value + rep * self.p_parameter)
 
-        # Q(MB)
+        # save expecetd value of mb = beta_mb * q_value
+        self.markov_state._mb_value = mb_value
         self.markov_state._state1_p = p
-        self.markov_state._q_mb = q_mb
         return p
 
-    def evaluate_rl_hybrid(self):
+    def evaluate_rl_hybrid(self, response=None):
         """
         According to Daw 2011
         Evaluate Q table using RL-Hybrid
@@ -898,34 +923,42 @@ class MarkovIBL(MarkovState):
             alpha=.5,
             beta=5,
             p_parameter=0,
-            lambda_parameter=.6
-            w_parameter=.5
-        w_parameter=1 --> MB
-        w_parameter=0 --> MF
-        :return:
+            lambda_parameter=.6 
+            beta_mf
+            beta_mb
         """
+        if not response:
+            response = self.action_space[0]  # always eval left
+
         self.evaluate_rl_mf()
         self.evaluate_rl_mb()
-        q_hybrid = self.w_parameter * self.markov_state._q_mb + (1 - self.w_parameter) * self.markov_state._q_mf
+        # q_hybrid = self.w_parameter * self.markov_state._q_mb + (1 - self.w_parameter) * self.markov_state._q_mf
+
+        # note: no need to x beta_mf since mf_value is already multiplied by beta_mf
+        hybrid_value = self.markov_state._mf_value + self.markov_state._mb_value
+
 
         # rep(a)
         try:
             prev_choice = self.log[-1].state1_response
         except:
             prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[1] else -1
+        rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(self.beta * (q_hybrid + rep * self.p_parameter))  # p_right
+        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
 
         # Q(Hybrid)
         self.markov_state._state1_p = p
-        self.markov_state._q_hybrid = q_hybrid
+        self.markov_state._hybrid_value = hybrid_value
         return p
 
-    def evaluate_ibl_mb(self):
+    def evaluate_ibl_mb(self, response=None):
         """
         IBL: two blended value version
+        Evaluate any one of response from activation space
+        In RL algorithm, always choose LEFT, but here, we use memory retrieval
+        retrieve the response that is mostly likely lead to the best blended state
         :return:
         ################## SETUP MODEL markov-ibl ##################
         {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
@@ -945,227 +978,245 @@ class MarkovIBL(MarkovState):
         d = dict(zip(['B', 'C'], [b_value, c_value]))
         best_blended_state = random.choice([k for k, v in d.items() if v == np.max([b_value, c_value])])
 
-        # retrieve response
-        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
-        retrieved_response = retrieved_memory['response']
+        # if not pass in a specific response to evaluate
+        # will retrieve the one that most likely leads to best_blended_state
+        if not response:
+            response = self.retrieve_response_from_state(s_= best_blended_state)
 
         # Determine the choice
-        if COMMON_TRANS[retrieved_response] == 'B':
+        if COMMON_TRANS[response] == 'B':
             best_blended_val = (b_value - c_value)
         else:
             best_blended_val = (c_value - b_value)
+
+        # scale by beta_mb
+        mb_value = self.beta_mb * best_blended_val
 
         # control stickness
         try:
             prev_choice = self.log[-1].state1_response
         except:
             prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == retrieved_response else -1
+        rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(self.beta * (best_blended_val + rep * self.p_parameter))  # p_right
+        p = expit(mb_value + rep * self.p_parameter)  # p_right
 
         if random.random() < p:
-            a = retrieved_response
+            a = response
         else:
-            a = MarkovIBL.return_alternative_item(self.action_space, retrieved_response)
-
-        self.memory.advance()
+            a = MarkovIBL.return_alternative_item(self.action_space, response)
 
         self.markov_state._state1_p = p
         self.markov_state._best_blended_state = best_blended_state
         self.markov_state._best_blended_value = best_blended_val
-        self.markov_state._retrieved_response = retrieved_response
+        self.markov_state._retrieved_response = response
+        self.markov_state._mb_value = mb_value # scaled by beta_mb
         return a
 
-    def evaluate_ibl_hybrid(self):
+    def evaluate_ibl_hybrid(self, response=None):
         """
         A combination of RL-MF + IBL-MB
         :return:
         """
         # value of MB
-        self.evaluate_ibl_mb()
-        retrieved_response = self.markov_state._retrieved_response
-        mb_state, mb_value = self.markov_state._best_blended_state, self.markov_state._best_blended_value
+        self.evaluate_ibl_mb(response=response)
+        if not response:
+            response = self.markov_state._retrieved_response
+        mb_state, mb_value = self.markov_state._best_blended_state, self.markov_state._mb_value
 
         # value of MF
-        q = self.q.copy()
-        mf_value = q[('A', retrieved_response)] - q[('A', MarkovIBL.return_alternative_item(self.action_space, retrieved_response))]# q value of MF
+        self.evaluate_rl_mf(response=response)
+        mf_value = self.markov_state._mf_value
 
         # calculate blended value
-        hybrid_value = self.w_parameter * mb_value + (1 - self.w_parameter) * mf_value
+        # hybrid_value = self.w_parameter * mb_value + (1 - self.w_parameter) * mf_value
+        hybrid_value = mf_value + mb_value
 
         # control stickness
         try:
             prev_choice = self.log[-1].state1_response
         except:
             prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == retrieved_response else -1
+        rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(self.beta * (hybrid_value + rep * self.p_parameter))  # p_left
+        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
 
         if random.random() < p:
-            a = retrieved_response
+            a = response
         else:
-            a = MarkovIBL.return_alternative_item(self.action_space, retrieved_response)
+            a = MarkovIBL.return_alternative_item(self.action_space, response)
 
         self.markov_state._state1_p = p
+        self.markov_state._hybrid_value = hybrid_value
         return a
 
-    def evaluate_ibl_mb_deprecated(self):
+    def retrieve_response_from_state(self, s_):
         """
-        IBL: two blended value version
-        :return:
-        ################## SETUP MODEL markov-ibl ##################
-        {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
-        'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)},
-        'alpha1': 0.5, 'alpha2': 0.5, 'beta1': 5, 'beta2': 5, 'lambda_parameter': 0.2, 'p_parameter': 0,
-        'w_parameter': 0, 'temperature': 0.1, 'decay': 0.5}
-
-        Use parameters:
-            self.beta
-        """
-        # blend B and C
-        b_value, c_value = [self.memory.blend("reward", curr_state=state) for state in ['B', 'C']]
-        self.markov_state._b_value = b_value
-        self.markov_state._c_value = c_value
-        best_blended_val = np.max([b_value, c_value])
-        # best_blended_val = np.abs(b_value - c_value)
-
-        # decide best_blended_state
-        d = dict(zip(['B', 'C'], [b_value, c_value]))
-        best_blended_state = random.choice([k for k, v in d.items() if v == np.max([b_value, c_value])])
-
-        # retrieve response
-        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
-
-        # rep(a)
-        try:
-            prev_choice = self.log[-1].state1_response
-        except:
-            prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[1] else -1
-
-        # softmax choice rule
-        p = expit(self.beta * (best_blended_val + rep * self.p_parameter))
-
-        if random.random() < p: # p(retrieved_response)
-            a = retrieved_memory['response']
-        else:
-            a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-
-        self.memory.advance()
-
-        self.markov_state._state1_p = p
-        self.markov_state._best_blended_state = best_blended_state
-        self.markov_state._best_blended_value = best_blended_val
-        return a
-
-    def evaluate_ibl_mb_deprecated2(self):
-        """
-        Complicated evaluate (deprecated for now)
-        Not fully undestand...
+        Retrieve the response that mostly likely leads to next state s_
+        Advance time
+        :param s_:
         :return:
         """
-        # b_value, c_value = [np.round(self.memory.blend("reward", curr_state=state), 4) for state in ['B', 'C']]
-        # best_val = np.max([b_value, c_value])
-
-        # decide best option
-        # state_blend_dict = dict(zip(['B', 'C'], [b_value, c_value]))
-        # best_blended_state = random.choice([k for k, v in state_blend_dict.items() if v == best_val])
-
-        best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
-        best_blended_state = best_blended_state['curr_state']
-        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
-
-        # rep(a)
-        try:
-            prev_choice = self.log[-1].state1_response
-        except:
-            prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[1] else -1
-
-        # softmax choice rule
-        p = expit(self.beta * (best_blended_val + rep * self.p_parameter))
-        # print('best_blended_val = %.2f, rep, %d, p = %.2f' % (best_blended_val, rep, p))
-        # if retrieved_memory['reward'] > 0:
-        #     a = retrieved_memory['response']
-        # else:
-        #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-
-        # if (retrieved_memory['reward'] > 0) and (p < random.random()):
-        #     a = retrieved_memory['response']
-        # else:
-        #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-
-        a1 = retrieved_memory['response']
-        a2 = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-        rand_p = random.random()
-        # this commented block show hybrid pattern
-        # if random.random() < p:
-        #     if retrieved_memory['reward'] > 0:
-        #         a = a1
-        #     else:
-        #         a = a2
-        # else:
-        #     if retrieved_memory['reward'] > 0:
-        #         a = a2
-        #     else:
-        #         a = a1
-
-        if retrieved_memory['reward'] > 0:
-            if rand_p < p:
-                a = a1
-            else:
-                a = a2
-        else:
-            if rand_p < p:
-                a = a1
-            else:
-                a = a2
-        # print('blend = %.2f, rep, %d, p = %.2f, a1[%s] a[%s]' % (best_blended_val, rep, p, a1, a))
-
+        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=s_)
+        retrieved_response = retrieved_memory['response']
         self.memory.advance()
-        self.markov_state._best_blended_state = best_blended_state
-        self.markov_state._best_blended_value = best_blended_val
-        return a
+        return retrieved_response
 
-    def evaluate_ibl_hybrid_deprecated(self):
-        """
-        A pure IBL hybrid
-        :return:
-        ################## SETUP MODEL markov-ibl ##################
-        {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
-        'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)},
-        'alpha1': 0.5, 'alpha2': 0.5, 'beta1': 2, 'beta2': 5, 'lambda_parameter': 0.5, 'p_parameter': 0,
-        'w_parameter': 0, 'temperature': 0.2, 'decay': 0.5}
-        """
-        best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
-        best_blended_state = best_blended_state['curr_state']
-        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
-
-        # rep(a)
-        try:
-            prev_choice = self.log[-1].state1_response
-        except:
-            prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == self.action_space[1] else -1
-
-        # softmax choice rule
-        p = expit(self.beta * (best_blended_val + rep * self.p_parameter))
-
-        if random.random() < p:
-            a = retrieved_memory['response']
-        else:
-            a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-
-        self.memory.advance()
-
-        self.markov_state._state1_p = p
-        self.markov_state._best_blended_state = best_blended_state
-        self.markov_state._best_blended_value = best_blended_val
-        return a
+    # def evaluate_ibl_mb_deprecated(self):
+    #     """
+    #     IBL: two blended value version
+    #     :return:
+    #     ################## SETUP MODEL markov-ibl ##################
+    #     {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
+    #     'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)},
+    #     'alpha1': 0.5, 'alpha2': 0.5, 'beta1': 5, 'beta2': 5, 'lambda_parameter': 0.2, 'p_parameter': 0,
+    #     'w_parameter': 0, 'temperature': 0.1, 'decay': 0.5}
+    #
+    #     Use parameters:
+    #         self.beta
+    #     """
+    #     # blend B and C
+    #     b_value, c_value = [self.memory.blend("reward", curr_state=state) for state in ['B', 'C']]
+    #     self.markov_state._b_value = b_value
+    #     self.markov_state._c_value = c_value
+    #     best_blended_val = np.max([b_value, c_value])
+    #     # best_blended_val = np.abs(b_value - c_value)
+    #
+    #     # decide best_blended_state
+    #     d = dict(zip(['B', 'C'], [b_value, c_value]))
+    #     best_blended_state = random.choice([k for k, v in d.items() if v == np.max([b_value, c_value])])
+    #
+    #     # retrieve response
+    #     retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
+    #
+    #     # rep(a)
+    #     try:
+    #         prev_choice = self.log[-1].state1_response
+    #     except:
+    #         prev_choice = random.choice(self.action_space)
+    #     rep = 1 if prev_choice == self.action_space[1] else -1
+    #
+    #     # softmax choice rule
+    #     p = expit(self.beta * (best_blended_val + rep * self.p_parameter))
+    #
+    #     if random.random() < p: # p(retrieved_response)
+    #         a = retrieved_memory['response']
+    #     else:
+    #         a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+    #
+    #     self.memory.advance()
+    #
+    #     self.markov_state._state1_p = p
+    #     self.markov_state._best_blended_state = best_blended_state
+    #     self.markov_state._best_blended_value = best_blended_val
+    #     return a
+    #
+    # def evaluate_ibl_mb_deprecated2(self):
+    #     """
+    #     Complicated evaluate (deprecated for now)
+    #     Not fully undestand...
+    #     :return:
+    #     """
+    #     # b_value, c_value = [np.round(self.memory.blend("reward", curr_state=state), 4) for state in ['B', 'C']]
+    #     # best_val = np.max([b_value, c_value])
+    #
+    #     # decide best option
+    #     # state_blend_dict = dict(zip(['B', 'C'], [b_value, c_value]))
+    #     # best_blended_state = random.choice([k for k, v in state_blend_dict.items() if v == best_val])
+    #
+    #     best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
+    #     best_blended_state = best_blended_state['curr_state']
+    #     retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
+    #
+    #     # rep(a)
+    #     try:
+    #         prev_choice = self.log[-1].state1_response
+    #     except:
+    #         prev_choice = random.choice(self.action_space)
+    #     rep = 1 if prev_choice == self.action_space[1] else -1
+    #
+    #     # softmax choice rule
+    #     p = expit(self.beta * (best_blended_val + rep * self.p_parameter))
+    #     # print('best_blended_val = %.2f, rep, %d, p = %.2f' % (best_blended_val, rep, p))
+    #     # if retrieved_memory['reward'] > 0:
+    #     #     a = retrieved_memory['response']
+    #     # else:
+    #     #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+    #
+    #     # if (retrieved_memory['reward'] > 0) and (p < random.random()):
+    #     #     a = retrieved_memory['response']
+    #     # else:
+    #     #     a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+    #
+    #     a1 = retrieved_memory['response']
+    #     a2 = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+    #     rand_p = random.random()
+    #     # this commented block show hybrid pattern
+    #     # if random.random() < p:
+    #     #     if retrieved_memory['reward'] > 0:
+    #     #         a = a1
+    #     #     else:
+    #     #         a = a2
+    #     # else:
+    #     #     if retrieved_memory['reward'] > 0:
+    #     #         a = a2
+    #     #     else:
+    #     #         a = a1
+    #
+    #     if retrieved_memory['reward'] > 0:
+    #         if rand_p < p:
+    #             a = a1
+    #         else:
+    #             a = a2
+    #     else:
+    #         if rand_p < p:
+    #             a = a1
+    #         else:
+    #             a = a2
+    #     # print('blend = %.2f, rep, %d, p = %.2f, a1[%s] a[%s]' % (best_blended_val, rep, p, a1, a))
+    #
+    #     self.memory.advance()
+    #     self.markov_state._best_blended_state = best_blended_state
+    #     self.markov_state._best_blended_value = best_blended_val
+    #     return a
+    #
+    # def evaluate_ibl_hybrid_deprecated(self):
+    #     """
+    #     A pure IBL hybrid
+    #     :return:
+    #     ################## SETUP MODEL markov-ibl ##################
+    #     {'MARKOV_PROBABILITY': 0.7, 'REWARD_PROBABILITY': 'LOAD',
+    #     'REWARD': {'B1': (1, -1), 'B2': (1, -1), 'C1': (1, -1), 'C2': (1, -1)},
+    #     'alpha1': 0.5, 'alpha2': 0.5, 'beta1': 2, 'beta2': 5, 'lambda_parameter': 0.5, 'p_parameter': 0,
+    #     'w_parameter': 0, 'temperature': 0.2, 'decay': 0.5}
+    #     """
+    #     best_blended_state, best_blended_val = self.memory.best_blend("reward", ({"curr_state": state} for state in ("B", "C")))
+    #     best_blended_state = best_blended_state['curr_state']
+    #     retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=best_blended_state)
+    #
+    #     # rep(a)
+    #     try:
+    #         prev_choice = self.log[-1].state1_response
+    #     except:
+    #         prev_choice = random.choice(self.action_space)
+    #     rep = 1 if prev_choice == self.action_space[1] else -1
+    #
+    #     # softmax choice rule
+    #     p = expit(self.beta * (best_blended_val + rep * self.p_parameter))
+    #
+    #     if random.random() < p:
+    #         a = retrieved_memory['response']
+    #     else:
+    #         a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
+    #
+    #     self.memory.advance()
+    #
+    #     self.markov_state._state1_p = p
+    #     self.markov_state._best_blended_state = best_blended_state
+    #     self.markov_state._best_blended_value = best_blended_val
+    #     return a
 
     # =================================================== #
     # CHOOSE STATE1
@@ -1450,6 +1501,7 @@ class MarkovIBL(MarkovState):
             learn_c = r0 - c_value
         else:
             pass
+        # TODO: need to think about how reward decay in memory?
         learn_a = self.lambda_parameter * r
         learn_a, learn_b, learn_c = np.round(learn_a, 2), np.round(learn_b, 2), np.round(learn_c, 2)
         self.memory.learn(state='<S%d>' % (1), curr_state='A', next_state=s_, response=a, reward=learn_a)
@@ -1655,8 +1707,6 @@ class MarkovIBL(MarkovState):
     def __repr__(self):
         return self.__str__()
 
-
-import scipy.optimize as opt
 class MarkovSimulation():
     GROUP_VAR = ['pre_received_reward', 'pre_state_frequency']
 
@@ -1694,17 +1744,57 @@ class MarkovSimulation():
               state2_response_time_mean=('state2_response_time', 'mean')).reset_index()
         return res
 
-class MarkovEstimateion():
-    # alpha = .2
-    # temperature = .2
-    # response_name = 'state1_response'
-    # feedback_name = 'received_reward'
-
-    def __init__(self, model_name='markov-rl-mf', data=None, verbose=False):
+class MarkovEstimation():
+    def __init__(self, model_name='markov-rl-mf', subject_id=None, verbose=False, drop_first_9=False):
         self.kind = model_name
-        self.data = data
         self.verbose = verbose
 
+        # init parameter bounds, init values and load subject data
+        self.init_estimated_params()
+        self.init_data(subject_id=subject_id, drop_first_9=drop_first_9)
+
+    def init_estimated_params(self):
+        """
+        As in Decker et al. (2016) and Potter, Bryce et al. (2017)
+        :return:
+        """
+        self.param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay']
+        # self.param_bounds = [(0, 1), (0, 10), (0, 10), (0, 10), (0, 1), (0, 1), (0.01, 1), (0.01, 1)]
+        # self.param_inits = [0.5, 5, 5, 5, .5, .5, 0.5, 0.5]
+
+
+        self.param_bounds = [(0,1),(0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1)]
+        self.param_inits = [np.random.uniform(l, u) for (l, u) in self.param_bounds]
+
+        # self.param_init = [np.random.beta(1.1,1.1), # alpha
+        #                    np.random.gamma(3, 1),   # beta
+        #                    np.random.gamma(3, 1),   # beta_mf
+        #                    np.random.gamma(3, 1),   # beta_mb
+        #                    np.random.beta(1.1,1.1), # lambda_parameter
+        #                    np.random.normal(0,10),  # p_parameter
+        #                    np.random.normal(0, 1),  # temperature
+        #                    np.random.normal(0, 1)]  # decay
+
+    def init_data(self, subject_id, drop_first_9):
+        """
+        According to Decker et al. (2016) and Potter, Bryce et al. (2017)
+        drop first 9 trials when estimate
+        :param data:
+        :param drop_first_10:
+        :return:
+        """
+        if not subject_id:
+            self.data = None
+            return
+        else:
+            try:
+                subject_dir = os.path.join(os.path.dirname(os.getcwd()), 'data', 'human', 'online_data')
+                self.data = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
+            except:
+                print('Cannot find subject data...Check data path')
+
+        if drop_first_9:
+            self.data = self.data.iloc[9:,]
 
     @property
     def data(self):
@@ -1765,42 +1855,43 @@ class MarkovEstimateion():
         bvals = np.exp(vals) / np.sum(np.exp(vals))
         return dict(zip(options, bvals))
 
-    @staticmethod
-    def estimate_LL_old(data, alpha, temperature):
-        """For each trial, calculate the probability of that response, sum the log likelihoods, and update the values"""
-        choices = list(set(data[MarkovEstimateion.response_name]))
-        Q = dict(zip(choices, [0 for x in choices]))
-        LL = 0.0
-        for response, feedback in zip(data[MarkovEstimateion.response_name], data[MarkovEstimateion.feedback_name]):
-            # Calculate log likelihood of response
-            options = Q.keys()
-            # TODO: can we replace this value with blended value?
-            # does it make sense to pass in blended value?
-            values = [Q[opt] for opt in options]
-            prob = MarkovEstimateion.boltzmann(options, values, temperature)[response]
-
-            # Sum up the LLs
-            LL += np.log(prob)
-
-            # Updates the Q values using Q-learning
-            Q_old = Q[response]
-            reward = feedback  # RLEstimation.rewards[feedback]
-            Q[response] = Q_old + alpha * (reward - Q_old)
-        return LL
+    # @staticmethod
+    # def estimate_LL_old(data, alpha, temperature):
+    #     """For each trial, calculate the probability of that response, sum the log likelihoods, and update the values"""
+    #     choices = list(set(data[MarkovEstimation.response_name]))
+    #     Q = dict(zip(choices, [0 for x in choices]))
+    #     LL = 0.0
+    #     for response, feedback in zip(data[MarkovEstimation.response_name], data[MarkovEstimation.feedback_name]):
+    #         # Calculate log likelihood of response
+    #         options = Q.keys()
+    #         # TODO: can we replace this value with blended value?
+    #         # does it make sense to pass in blended value?
+    #         values = [Q[opt] for opt in options]
+    #         prob = MarkovEstimation.boltzmann(options, values, temperature)[response]
+    #
+    #         # Sum up the LLs
+    #         LL += np.log(prob)
+    #
+    #         # Updates the Q values using Q-learning
+    #         Q_old = Q[response]
+    #         reward = feedback  # RLEstimation.rewards[feedback]
+    #         Q[response] = Q_old + alpha * (reward - Q_old)
+    #     return LL
 
     def estimate_function(self, param_values = None):
         """
-        Estimate LL
+        Estimate LL for instance of
         :param model_name:
         :param verbose:
-        :param args: a list of values for ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay']
+        :param args: a list of values
         :return:
         """
         assert (self.data is not None) and (len(param_values) == len(PARAMETER_NAMES))
         # define parameters
-        param_dict = dict(zip(['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay'], param_values))
+        param_dict = dict(zip(PARAMETER_NAMES, param_values))
+        est_instance = MarkovIBL(verbose=False)
 
-        LL = MarkovIBL(verbose=self.verbose).estimate_LL(df=self.data, init=True, verbose=self.verbose, model_name=self.kind,  **param_dict)
+        LL = est_instance.estimate_LL(df=self.data, init=True, verbose=self.verbose, model_name=self.kind,  **param_dict)
         return LL
 
     def v_function(self, param_values):
@@ -1825,8 +1916,6 @@ class MarkovEstimateion():
         :param param_bounds:
         :return:
 
-         >> init_params = [0.1, 5, 0.1, 1, 0, 0.1, 0.1]
-         >> param_bounds = [(0, 1), (0, 10), (0, 1), (1, 1), (0, 0), (0,1), (0,1)]
          >> res = MarkovEstimateion.optimization_function(df=df, x0=init_params, param_bounds=param_bounds)
         """
         # define default parameter bounds
@@ -1834,23 +1923,24 @@ class MarkovEstimateion():
             param_bounds = [(0.01, 1) for i in range(len(x0))]
         # create an estimation instance
         # define estimat model name and pass in data
-        est = MarkovEstimateion(data=df, model_name=estimate_model)
+        # est = MarkovEstimation(data=df, model_name=estimate_model)
+        est = MarkovEstimation(subject_id='1', model_name=estimate_model, verbose=0)
 
         # start optimization
         res = opt.minimize(est.v_function, x0=x0, bounds=param_bounds, method="Nelder-Mead")
 
         # save outout
         if save_output:
-            MarkovEstimateion.save_optimization_output(opt_result=res,
-                                                       estimate_model=estimate_model,
-                                                       subject_id=df['subject_id'].unique()[0],
-                                                       save_output=save_output)
+            MarkovEstimation.save_optimization_output(opt_result=res,
+                                                      estimate_model=estimate_model,
+                                                      subject_id=df['subject_id'].unique()[0],
+                                                      save_output=save_output)
         return res
 
     @staticmethod
     def save_optimization_output(opt_result, estimate_model, subject_id, save_output):
         # format opt results
-        param_names = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay']
+        param_names = MarkovEstimation().param_names
         best_fit_param = dict(zip(param_names, opt_result['x']))
         df = pd.DataFrame({**best_fit_param, 'maxLL':-1*opt_result['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
 
@@ -1867,3 +1957,47 @@ class MarkovEstimateion():
         df.to_csv(dest_file, index=False, mode=mode, header=header)
         return df
 
+
+    @staticmethod
+    def try_estimate(subject_dir, subject_id='1', estimate_model='markov-rl-mf', save_output=False):
+        """
+        Try to estimate maxLL of a subject with a specific model
+        According to Decker 2016,
+            - exclude first 9 trials
+            - applied following priors and bounds to parameters
+            - randomly initialized parameter values
+            - run 10 times
+        :param subject_dir:
+        :param subject_id:
+        :param estimate_model:
+        :return: a dataframe of all model MaxLL
+        """
+        df = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
+        est = MarkovEstimation(model_name=estimate_model, verbose=True)
+
+        init_params = est.param_inits
+        param_bounds = est.param_bounds
+        res = MarkovEstimation.optimization_function(df=df, x0=init_params, param_bounds=param_bounds)
+
+        param_names = est.param_names
+        best_fit_param = dict(zip(param_names, res['x']))
+        dfp = pd.DataFrame(
+            {**best_fit_param, 'maxLL':-1*res['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id},
+            index=[0]).round(4)
+        return dfp
+
+# >> model_name='markov-ibl-hybrid'
+# >> df = MarkovEstimateion.load_subject_data(subject_dir=subject_dir, subject_id='1')
+# >> MarkovIBL().estimate_LL(df, init=True, verbose=False, model_name=model_name,  **params)
+
+
+# subject_id = '1'
+# estimate_model = 'markov-rl-mf'
+#
+# df = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
+# est = MarkovEstimation(data=df, model_name=estimate_model, verbose=True)
+#
+# param_bounds = [(0,1),(0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1)]
+# param_inits = [np.random.uniform(lower, upper) for (lower, upper) in param_bounds]
+# res = MarkovEstimation.optimization_function(df=df, x0=param_inits, param_bounds=param_bounds)
+# res
