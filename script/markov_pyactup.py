@@ -1928,38 +1928,39 @@ class MarkovEstimation():
 
         # start optimization
         res = opt.minimize(est.v_function, x0=x0, bounds=param_bounds, method="Nelder-Mead")
-
-        # save outout
-        if save_output:
-            MarkovEstimation.save_optimization_output(opt_result=res,
-                                                      estimate_model=estimate_model,
-                                                      subject_id=df['subject_id'].unique()[0],
-                                                      save_output=save_output)
         return res
 
+        # # save outout
+        # if save_output:
+        #     MarkovEstimation.save_optimization_output(opt_result=res,
+        #                                               estimate_model=estimate_model,
+        #                                               subject_id=df['subject_id'].unique()[0],
+        #                                               save_output=save_output)
+        # return res
+
+    # @staticmethod
+    # def save_optimization_output(opt_result, estimate_model, subject_id, save_output):
+    #     # format opt results
+    #     param_names = MarkovEstimation().param_names
+    #     best_fit_param = dict(zip(param_names, opt_result['x']))
+    #     df = pd.DataFrame({**best_fit_param, 'maxLL':-1*opt_result['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
+    #
+    #     # define dest path
+    #     dest_file = os.path.join(save_output, '%s-%s-opt-result.csv' % (subject_id, estimate_model))
+    #
+    #     # append optimization if exist
+    #     if os.path.exists(dest_file):
+    #         mode = 'a'
+    #         header = False
+    #     else:
+    #         mode ='w'
+    #         header = True
+    #     df.to_csv(dest_file, index=False, mode=mode, header=header)
+    #     return df
+
+
     @staticmethod
-    def save_optimization_output(opt_result, estimate_model, subject_id, save_output):
-        # format opt results
-        param_names = MarkovEstimation().param_names
-        best_fit_param = dict(zip(param_names, opt_result['x']))
-        df = pd.DataFrame({**best_fit_param, 'maxLL':-1*opt_result['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
-
-        # define dest path
-        dest_file = os.path.join(save_output, '%s-%s-opt-result.csv' % (subject_id, estimate_model))
-
-        # append optimization if exist
-        if os.path.exists(dest_file):
-            mode = 'a'
-            header = False
-        else:
-            mode ='w'
-            header = True
-        df.to_csv(dest_file, index=False, mode=mode, header=header)
-        return df
-
-
-    @staticmethod
-    def try_estimate(subject_dir, subject_id='1', estimate_model='markov-rl-mf', save_output=False):
+    def try_estimate(subject_dir, subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
         """
         Try to estimate maxLL of a subject with a specific model
         According to Decker 2016,
@@ -1984,6 +1985,22 @@ class MarkovEstimation():
         dfp = pd.DataFrame(
             {**best_fit_param, 'maxLL':-1*res['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id},
             index=[0]).round(4)
+
+        if not os.path.exists(save_output):
+            return dfp
+
+        # define dest path
+        dest_file = os.path.join(save_output, 'sub%s-%s-opt-result.csv' % (subject_id, estimate_model))
+
+        # append optimization if exist
+        if os.path.exists(dest_file):
+            mode = 'a'
+            header = False
+        else:
+            mode = 'w'
+            header = True
+        dfp.to_csv(dest_file, index=False, mode=mode, header=header)
+        if verbose: print('... SAVED optimized parameter data ...', save_output)
         return dfp
 
 # >> model_name='markov-ibl-hybrid'
@@ -1993,11 +2010,4 @@ class MarkovEstimation():
 
 # subject_id = '1'
 # estimate_model = 'markov-rl-mf'
-#
-# df = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
-# est = MarkovEstimation(data=df, model_name=estimate_model, verbose=True)
-#
-# param_bounds = [(0,1),(0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1)]
-# param_inits = [np.random.uniform(lower, upper) for (lower, upper) in param_bounds]
-# res = MarkovEstimation.optimization_function(df=df, x0=param_inits, param_bounds=param_bounds)
-# res
+# MarkovEstimation.try_estimate(subject_dir=subject_dir, subject_id=subject_id, estimate_model=estimate_model, save_output=0)
