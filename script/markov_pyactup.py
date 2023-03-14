@@ -1759,13 +1759,10 @@ class MarkovEstimation():
         :return:
         """
         self.param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay']
+        self.param_bounds = [(0,1),(0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1)]
+        self.param_inits = [np.round(np.random.uniform(l, u),2) for (l, u) in self.param_bounds]
         # self.param_bounds = [(0, 1), (0, 10), (0, 10), (0, 10), (0, 1), (0, 1), (0.01, 1), (0.01, 1)]
         # self.param_inits = [0.5, 5, 5, 5, .5, .5, 0.5, 0.5]
-
-
-        self.param_bounds = [(0,1),(0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1)]
-        self.param_inits = [np.random.uniform(l, u) for (l, u) in self.param_bounds]
-
         # self.param_init = [np.random.beta(1.1,1.1), # alpha
         #                    np.random.gamma(3, 1),   # beta
         #                    np.random.gamma(3, 1),   # beta_mf
@@ -1958,7 +1955,7 @@ class MarkovEstimation():
 
 
     @staticmethod
-    def try_estimate(subject_dir, subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
+    def try_estimate(subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
         """
         Try to estimate maxLL of a subject with a specific model
         According to Decker 2016,
@@ -1971,20 +1968,17 @@ class MarkovEstimation():
         :param estimate_model:
         :return: a dataframe of all model MaxLL
         """
-        df = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
-        est = MarkovEstimation(model_name=estimate_model, verbose=True)
+        est = MarkovEstimation(model_name=estimate_model, subject_id=subject_id, drop_first_9=True, verbose=verbose)
+        res = MarkovEstimation.optimization_function(df=est.data, x0=est.param_inits, param_bounds=est.param_bounds)
 
-        init_params = est.param_inits
-        param_bounds = est.param_bounds
-        res = MarkovEstimation.optimization_function(df=df, x0=init_params, param_bounds=param_bounds)
-
-        param_names = est.param_names
-        best_fit_param = dict(zip(param_names, res['x']))
         dfp = pd.DataFrame(
-            {**best_fit_param, 'maxLL':-1*res['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id},
+            {**dict(zip(est.param_names, res['x'])),
+             'maxLL':-1*res['fun'],
+             'estimate_model': estimate_model,
+             'subject_id': subject_id},
             index=[0]).round(4)
 
-        if not os.path.exists(save_output):
+        if not save_output:
             return dfp
 
         # define dest path
@@ -1998,7 +1992,7 @@ class MarkovEstimation():
             mode = 'w'
             header = True
         dfp.to_csv(dest_file, index=False, mode=mode, header=header)
-        if verbose: print('... SAVED optimized parameter data ...', save_output)
+        if verbose: print('... SAVED optimized parameter data ...[%s] [%s]' %(subject_id, estimate_model))
         return dfp
 
 # >> model_name='markov-ibl-hybrid'
