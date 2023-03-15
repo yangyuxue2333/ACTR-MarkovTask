@@ -713,44 +713,62 @@ class MaxLogLikelihood:
                     if verbose:
                         print('\tSAVING MODEL[%s] AGG FILE...ID[%s]' % (model_name, param_id))
 
-
     @staticmethod
     def save_agg_subject_data(main_dir, subject_dir, overwrite=True, verbose=True):
-        """
-        Save aggregated data to each subject folder
-
-        :param main_dir:
-        :return:
-        """
-
-        # get all subject_ids
-        subject_ids = os.listdir(os.path.join(main_dir, subject_dir))
-
+        subject_ids = ['sub' + str(i) for i in np.arange(1, 152)]
         for subject_id in subject_ids:
-            # get all subject_path contain *.csv: prac.csv and test.cav
-            subject_paths = glob.glob(os.path.join(main_dir, subject_dir, subject_id, '*.csv'))
-
-            for subject_path in subject_paths:
-
-                # access trial type from path
-                trial_type = subject_path.split('/')[-1].split('.')[0]
-
-                # calculate aggregate data
-                df_subject = pd.read_csv(subject_path, index_col=0)
-
-                # group variable
+            for trial_type in ['prac', 'test']:
+                f = os.path.join(main_dir, subject_dir, subject_id, trial_type + '.csv')
+                df_subject = pd.read_csv(f, index_col=0)
                 df_subject_agg = MaxLogLikelihood.calculate_agg_data(df=df_subject, data_id=subject_id)
 
-                # define destination folder
                 dest_dir = os.path.join(main_dir, subject_dir, subject_id, 'aggregate')
-                # check exists
-                if not Simulation.simple_check_exist(dest_dir=dest_dir,
-                                                     target_num_files=2,
-                                                     overwrite=overwrite,
-                                                     special_suffix='*-agg.csv'):
-                    # save to aggregate dir
-                    df_subject_agg.to_csv(os.path.join(dest_dir, trial_type + '-agg.csv'), header=True, index=False)
-                    if verbose: print('\tSAVING SUBJECT AGG FILE...ID [%s]' % (subject_id))
+
+                if not os.path.exists(dest_dir):
+                    if verbose: print('...CREATE...', dest_dir)
+                    os.mkdir(dest_dir)
+                df_subject_agg.to_csv(os.path.join(dest_dir, trial_type + '-agg.csv'), header=True, index=False)
+                if verbose: print('\tSAVING SUBJECT AGG FILE...ID [%s]' % (subject_id))
+
+    # @staticmethod
+    # def save_agg_subject_data_deprecated(main_dir, subject_dir, overwrite=True, verbose=True):
+    #     """
+    #     Save aggregated data to each subject folder
+    #
+    #     :param main_dir:
+    #     :return:
+    #     """
+    #     subject_paths = np.sort(glob.glob(os.path.join(main_dir, subject_dir, '*', '*.csv')))
+    #
+    #
+    #     # get all subject_ids
+    #     # subject_ids = os.listdir(os.path.join(main_dir, subject_dir))
+    #
+    #     for subject_id in subject_paths:
+    #         # get all subject_path contain *.csv: prac.csv and test.cav
+    #         subject_paths = glob.glob(os.path.join(main_dir, subject_dir, 'sub'+subject_id, '*.csv'))
+    #
+    #         for subject_path in subject_paths:
+    #
+    #             # access trial type from path
+    #             trial_type = subject_path.split('/')[-1].split('.')[0]
+    #
+    #             # calculate aggregate data
+    #             df_subject = pd.read_csv(subject_path, index_col=0)
+    #
+    #             # group variable
+    #             df_subject_agg = MaxLogLikelihood.calculate_agg_data(df=df_subject, data_id=subject_id)
+    #
+    #             # define destination folder
+    #             dest_dir = os.path.join(main_dir, subject_dir, subject_id, 'aggregate')
+    #             # check exists
+    #             if not Simulation.simple_check_exist(dest_dir=dest_dir,
+    #                                                  target_num_files=2,
+    #                                                  overwrite=overwrite,
+    #                                                  special_suffix='*-agg.csv'):
+    #                 # save to aggregate dir
+    #                 df_subject_agg.to_csv(os.path.join(dest_dir, trial_type + '-agg.csv'), header=True, index=False)
+    #                 if verbose: print('\tSAVING SUBJECT AGG FILE...ID [%s]' % (subject_id))
 
     # orin_dir = np.sort(glob.glob(subject_dir + '/[0-9]*'))
     #     for d in orin_dir:

@@ -62,10 +62,12 @@ COMMON_TRANS = {
 # parameter names
 RL_PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter']
 IBL_PARAMETER_NAMES = ['temperature', 'decay', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter']
-PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay']
+RT_PARAMETER_NAMES = ['lf', 'fixed_cost']
+
+PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lf', 'fixed_cost', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf']
 TASK_PARAMETER_NAMES = ['MARKOV_PROBABILITY','REWARD_PROBABILITY', 'REWARD']
 
-# all possible model names
+# all model names
 MODEL_NAMES = ['markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid', 'markov-ibl-mb', 'markov-ibl-hybrid']
 
 
@@ -512,7 +514,7 @@ class MarkovIBL(MarkovState):
 
     def init_parameters(self):
 
-        # RL parameters ['beta', 'beta1', 'beta2', 'alpha', 'alpha1', 'alpha2', 'lambda', 'p', 'w', 'temperature', 'decay']
+        # RL parameters ['beta', 'beta1', 'beta2', 'alpha', 'alpha1', 'alpha2', 'lambda', 'p', 'w', 'temperature', 'decay', 'lf']
         # RL MF/MB parameters
         self.alpha = .2  # learning rate
         # self.alpha1 = .2  # learning rate
@@ -521,15 +523,18 @@ class MarkovIBL(MarkovState):
         self.beta_mf = 5  # stage1 mf exploration rate
         self.beta_mb = 5  # stage1 mb exploration rate
 
-        self.temperature = .2  # temperature parameter
-        self.decay = .2  # decay parameter
+        self.temperature = .2   # temperature parameter
+        self.decay = .2         # decay parameter
+        self.lf = .63           # latency factor (F)
+        self.fixed_cost = .585           # latency factor (F)
         self.lambda_parameter = .2  # decay rate
-        self.p_parameter = 0  # perseveration rate
+        self.p_parameter = 0    # perseveration rate
         # self.w_parameter = 0  # w = 0: pure MF
 
         # IBL parameters
         self.memory.noise = self.temperature
         self.memory.decay = self.decay
+
 
         # init task parameters
         reward_dict = REWARD_DICT
@@ -548,7 +553,10 @@ class MarkovIBL(MarkovState):
                                 # 'w_parameter' : self.w_parameter,  # w = 0: pure MF
                                 # IBL Parameter
                                 'temperature' : self.temperature,  # temperature rate
-                                'decay' : self.decay  # decay rate
+                                'decay' : self.decay,           # decay rate
+                                # retrieval latency parameters
+                                'lf': self.lf,                  # latency factor (F)
+                                'fixed_cost': self.fixed_cost   # fixed cost for time retrieval
         }
 
     def update_parameters(self, **kwargs):
@@ -576,6 +584,10 @@ class MarkovIBL(MarkovState):
         # update IBL parameters
         self.memory.noise = self.temperature
         self.memory.decay = self.decay
+
+        # retrieval latency parameters
+        self.lf = self.task_parameters['lf']
+        self.fixed_cost = self.task_parameters['fixed_cost']
 
         # update reward
         global REWARD_DICT
@@ -647,12 +659,12 @@ class MarkovIBL(MarkovState):
         # print('test', self.markov_state.state1_stimuli, self.markov_state.state2_stimuli)
         if self.markov_state.state == 0:
             self.markov_state.state1(response)
-            self.markov_state.state1_response_time = 0.0
+            # self.markov_state.state1_response_time = 0.0
 
 
         else:
             self.markov_state.state2(response)
-            self.markov_state.state2_response_time = 0.0
+            # self.markov_state.state2_response_time = 0.0
 
             # continue deliver rewards, no need to wait for response
             self.update_random_walk_reward_probabilities()
@@ -684,6 +696,7 @@ class MarkovIBL(MarkovState):
 
             if self.verbose:
                 print(self.markov_state)
+
 
     def update_random_walk_reward_probabilities(self):
         """
@@ -970,7 +983,8 @@ class MarkovIBL(MarkovState):
             self.beta
         """
         # blend B and C
-        b_value, c_value = [self.memory.blend("reward", curr_state=state) for state in ['B', 'C']]
+        # b_value, c_value = [self.memory.blendself.memory.blend("reward", curr_state=state) for state in ['B', 'C']]
+        b_value, c_value = [self.start_blending(outcome_attribute="reward", curr_state=state) for state in ['B', 'C']]
         self.markov_state._b_value = b_value
         self.markov_state._c_value = c_value
 
@@ -1059,7 +1073,7 @@ class MarkovIBL(MarkovState):
         :param s_:
         :return:
         """
-        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state='A', next_state=s_)
+        retrieved_memory = self.start_retrieving(rehearse=False, curr_state='A', next_state=s_)
         retrieved_response = retrieved_memory['response']
         self.memory.advance()
         return retrieved_response
@@ -1324,7 +1338,7 @@ class MarkovIBL(MarkovState):
         Keyword arguments: 
         """
         assert self.markov_state._curr_stage == '2'
-        retrieved_memory = self.memory.retrieve(rehearse=False, curr_state=self.markov_state._curr_state)
+        retrieved_memory = self.start_retrieving(rehearse=False, curr_state=self.markov_state._curr_state)
         if retrieved_memory['reward'] > 0:
             a = retrieved_memory['response']
         else:
@@ -1509,6 +1523,73 @@ class MarkovIBL(MarkovState):
         self.memory.learn(state='<S%d>' % (2), curr_state='C', next_state=None, response=a_, reward=learn_c)
         self.memory.advance(self.advance_time)
 
+    def start_blending(self, outcome_attribute, curr_state):
+        """
+        To better calculate match score, we clear activation history everytime we blend
+        :return: blended value
+        """
+        # clear activation_history
+        self.memory.activation_history = []
+
+        # start blending
+        bv = self.memory.blend(outcome_attribute, curr_state=curr_state)
+        self.memory.advance()
+
+        # calculate match score and retrieval latency
+        match_score = MarkovIBL.match_score(self.memory.activation_history)
+        retrieve_latency = MarkovIBL.retrieval_time(match_score, fixed_cost=self.fixed_cost, F=self.lf)
+
+        # record latency
+        self.markov_state._retrieve_latency = retrieve_latency
+        self.record_retrieval_latency(retrieve_latency)
+
+        # reset activation history
+        self.memory.activation_history = []
+        return bv
+
+    def start_retrieving(self, **kwargs):
+        """
+        To better calculate activation, we clear activation history everytime we retrieve
+        :return:
+        """
+        # clear activation_history
+        self.memory.activation_history = []
+
+        # start retrieving
+        retrieved_memory = self.memory.retrieve(**kwargs)
+
+        self.memory.advance()
+
+        # get activation from history records (max activation value of all retrieval candidates)
+        activation = MarkovIBL.activation_score(self.memory.activation_history)
+        self.markov_state._retrieved_memory_history = random.choice([c for c in self.memory.activation_history if c['name']==retrieved_memory._name])
+
+        # calculate retrieval latency
+        retrieve_latency = MarkovIBL.retrieval_time(activation, fixed_cost=self.fixed_cost, F=self.lf)
+
+        # record latency
+        self.markov_state._retrieve_latency = retrieve_latency
+        self.record_retrieval_latency(retrieve_latency)
+
+        # clear activation_history
+        self.memory.activation_history = []
+
+        return retrieved_memory
+
+
+    def record_retrieval_latency(self, retrieve_latency):
+        """
+        record the retrieve_latency to markov_state
+        :param retrieve_latency:
+        :return:
+        """
+
+        if self.markov_state._curr_stage == '1':
+            self.markov_state.state1_response_time += retrieve_latency
+        if self.markov_state._curr_stage == '2':
+            self.markov_state.state2_response_time += retrieve_latency
+
+
 
     # =================================================== #
     # ACT-R MATH FUNCTIONS
@@ -1527,11 +1608,36 @@ class MarkovIBL(MarkovState):
         """
 
         :param fixed_cost: perception and encoding
-        :param F: :lf parameter in ACT-R, default =.63
+        :param F: :lf parameter in ACT-R, default F=.63, fixed_cost=.585
         :param activation:
         :return: retrieval time
         """
         return fixed_cost + F * np.exp(-activation)
+
+    @staticmethod
+    def match_score(activation_history):
+        """
+        According to ACT-R, a match score, M, is computed as the
+        log of the sum over the chunks i in MS of e to the power A(i).  If M
+        is greater than or equal to the retrieval threshold of the declarative
+        module then the created chunk is placed into the blending buffer with
+        a latency computed in the same way the declarative module computes
+        retrieval latency using M as the activation of the chunk.
+        :param fixed_cost: perception and encoding
+        :param F: :lf parameter in ACT-R, default =.63
+        :param activation:
+        :return: retrieval time
+        """
+        return np.log(np.sum([np.exp(c['activation']) for c in activation_history]))
+
+    @staticmethod
+    def activation_score(activation_history):
+        """
+
+        :param activation_history:
+        :return:
+        """
+        return max(c['activation'] for c in activation_history)
 
     # =================================================== #
     # RUN EXPERIMENT
@@ -1758,8 +1864,10 @@ class MarkovEstimation():
         As in Decker et al. (2016) and Potter, Bryce et al. (2017)
         :return:
         """
-        self.param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay']
-        self.param_bounds = [(0,1),(0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1)]
+        # right now, we only estimate choice parameter
+        # TODO: in the future, may implement estimation for response time parameter lf, fixed costs
+        self.param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
+        self.param_bounds = [(0,1), (0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1), (0.01, 1), (0, 1)]
         self.param_inits = [np.round(np.random.uniform(l, u),2) for (l, u) in self.param_bounds]
         # self.param_bounds = [(0, 1), (0, 10), (0, 10), (0, 10), (0, 1), (0, 1), (0.01, 1), (0.01, 1)]
         # self.param_inits = [0.5, 5, 5, 5, .5, .5, 0.5, 0.5]
@@ -1838,7 +1946,11 @@ class MarkovEstimation():
                  'p_parameter': 0.051,
                  'w_parameter': 0.0}
         """
-        f = glob.glob(os.path.join(opt_dir, 'sub%s*%s*.csv' % (subject_id, estimate_model)))[0]
+
+        f = os.path.join(opt_dir, 'sub%s-%s-opt-result.csv' % (subject_id, estimate_model))
+        if not os.path.exists(f):
+            print('Cannot find file')
+            return
         df = pd.read_csv(f)
         d = df.loc[df['maxLL'].idxmax()].to_dict()
         params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
