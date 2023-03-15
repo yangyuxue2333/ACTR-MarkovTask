@@ -492,7 +492,7 @@ class MarkovIBL(MarkovState):
         self.LL = 0.0
 
         # trial duration
-        self.advance_time = 40
+        self.advance_time = 50
 
     # =================================================== #
     # SETUP
@@ -1031,6 +1031,7 @@ class MarkovIBL(MarkovState):
     def evaluate_ibl_hybrid(self, response=None):
         """
         A combination of RL-MF + IBL-MB
+        The potential problem of this model is, no matter what, it will go through MB evaluation process
         :return:
         """
         # value of MB
@@ -1343,7 +1344,6 @@ class MarkovIBL(MarkovState):
             a = retrieved_memory['response']
         else:
             a = random.choice([action for action in self.action_space if action != retrieved_memory['response']])
-        self.memory.advance()
         return a
 
     # =================================================== #
@@ -1557,7 +1557,6 @@ class MarkovIBL(MarkovState):
 
         # start retrieving
         retrieved_memory = self.memory.retrieve(**kwargs)
-
         self.memory.advance()
 
         # get activation from history records (max activation value of all retrieval candidates)
