@@ -1850,7 +1850,7 @@ class MarkovSimulation():
         return res
 
 class MarkovEstimation():
-    def __init__(self, model_name='markov-rl-mf', subject_id=None, verbose=False, drop_first_9=False):
+    def __init__(self, model_name='markov-rl-mf', subject_id=None, drop_first_9=False, verbose=False):
         self.kind = model_name
         self.verbose = verbose
 
@@ -1861,15 +1861,37 @@ class MarkovEstimation():
     def init_estimated_params(self):
         """
         As in Decker et al. (2016) and Potter, Bryce et al. (2017)
+        TODO: implement estimation for response time parameter lf, fixed costs
         :return:
         """
-        # right now, we only estimate choice parameter
-        # TODO: in the future, may implement estimation for response time parameter lf, fixed costs
-        self.param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
-        self.param_bounds = [(0,1), (0,30),(0, 30),(0, 30),(0,1),(-30,30),(0.01, 1),(0.01, 1), (0.01, 1), (0, 1)]
-        self.param_inits = [np.round(np.random.uniform(l, u),2) for (l, u) in self.param_bounds]
-        # self.param_bounds = [(0, 1), (0, 10), (0, 10), (0, 10), (0, 1), (0, 1), (0.01, 1), (0.01, 1)]
-        # self.param_inits = [0.5, 5, 5, 5, .5, .5, 0.5, 0.5]
+        param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
+        param_bounds = {'alpha':(0,1), 'beta':(0,30), 'beta_mf':(0,30), 'beta_mb':(0, 30), 'lambda_parameter':(0,1), 'p_parameter':(-30,30), 'temperature':(0.01,1), 'decay':(0.01,1), 'lf':(0.01,1), 'fixed_cost':(0,1)}
+        param_zero_bounds = {'alpha':(0.2,0.2), 'beta':(5,5), 'beta_mf':(5,5), 'beta_mb':(5,5), 'lambda_parameter':(0.2,0.2), 'p_parameter':(0,0), 'temperature':(0.2,0.2), 'decay':(0.5,0.5), 'lf':(0.5,0.5), 'fixed_cost':(0,0)}
+
+        if self.kind == 'markov-rl-mf':
+            exclude = ['beta_mb', 'temperature', 'decay', 'lf', 'fixed_cost']
+
+        elif self.kind == 'markov-rl-mb':
+            exclude = ['beta_mf', 'temperature', 'decay', 'lf', 'fixed_cost']
+
+        elif self.kind == 'markov-rl-hybrid':
+            exclude = ['temperature', 'decay', 'lf', 'fixed_cost'] # exclude latency parameter
+
+        elif self.kind == 'markov-ibl-mb':
+            exclude = ['beta_mf', 'lf', 'fixed_cost'] # exclude latency parameter
+
+        elif self.kind == 'markov-ibl-hybrid':
+            exclude = ['lf', 'fixed_cost'] # exclude latency parameter
+
+        else:
+            pass
+
+        bounds = param_bounds.copy()
+        bounds.update({key: param_zero_bounds[key] for key in exclude})
+        self.param_names = param_names
+        self.param_bounds = [v for k, v in bounds.items() if k in self.param_names]
+        self.param_inits = [np.round(np.random.uniform(l, u), 2) for (l, u) in self.param_bounds]
+
         # self.param_init = [np.random.beta(1.1,1.1), # alpha
         #                    np.random.gamma(3, 1),   # beta
         #                    np.random.gamma(3, 1),   # beta_mf
@@ -1922,7 +1944,7 @@ class MarkovEstimation():
             return df
 
     @staticmethod
-    def load_opt_parameters(opt_dir, subject_id, estimate_model):
+    def load_opt_parameters(opt_dir, subject_id, estimate_model, only_maxLL=True):
         """
         Load optimized parameter data
         :param opt_dir: os.path.join(main_dir, 'data', 'model', 'param_optimization')
@@ -1951,9 +1973,12 @@ class MarkovEstimation():
             print('Cannot find file')
             return
         df = pd.read_csv(f)
-        d = df.loc[df['maxLL'].idxmax()].to_dict()
-        params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
-        return d, params
+        if only_maxLL:
+            d = df.loc[df['maxLL'].idxmax()].to_dict()
+            params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
+            return d, params
+        else:
+            return df
 
     @staticmethod
     def boltzmann(options, values, temperature):
@@ -1963,29 +1988,6 @@ class MarkovEstimation():
         bvals = np.exp(vals) / np.sum(np.exp(vals))
         return dict(zip(options, bvals))
 
-    # @staticmethod
-    # def estimate_LL_old(data, alpha, temperature):
-    #     """For each trial, calculate the probability of that response, sum the log likelihoods, and update the values"""
-    #     choices = list(set(data[MarkovEstimation.response_name]))
-    #     Q = dict(zip(choices, [0 for x in choices]))
-    #     LL = 0.0
-    #     for response, feedback in zip(data[MarkovEstimation.response_name], data[MarkovEstimation.feedback_name]):
-    #         # Calculate log likelihood of response
-    #         options = Q.keys()
-    #         # TODO: can we replace this value with blended value?
-    #         # does it make sense to pass in blended value?
-    #         values = [Q[opt] for opt in options]
-    #         prob = MarkovEstimation.boltzmann(options, values, temperature)[response]
-    #
-    #         # Sum up the LLs
-    #         LL += np.log(prob)
-    #
-    #         # Updates the Q values using Q-learning
-    #         Q_old = Q[response]
-    #         reward = feedback  # RLEstimation.rewards[feedback]
-    #         Q[response] = Q_old + alpha * (reward - Q_old)
-    #     return LL
-
     def estimate_function(self, param_values = None):
         """
         Estimate LL for instance of
@@ -1994,7 +1996,7 @@ class MarkovEstimation():
         :param args: a list of values
         :return:
         """
-        assert (self.data is not None) and (len(param_values) == len(PARAMETER_NAMES))
+        assert (self.data is not None) and (len(param_values) == 8 | len(param_values) == 10)
         # define parameters
         param_dict = dict(zip(PARAMETER_NAMES, param_values))
         est_instance = MarkovIBL(verbose=False)
@@ -2016,7 +2018,7 @@ class MarkovEstimation():
         return -1 * self.estimate_function(param_values=param_values)
 
     @staticmethod
-    def optimization_function(df, x0, param_bounds, estimate_model='markov-rl-mf', save_output=False):
+    def optimization_function(df, x0, param_bounds, estimate_model='markov-rl-mf', drop_first_9=False):
         """
         Optimization
         :param df:
@@ -2027,50 +2029,22 @@ class MarkovEstimation():
          >> res = MarkovEstimateion.optimization_function(df=df, x0=init_params, param_bounds=param_bounds)
         """
         # create an estimation instance
-        # define estimat model name and pass in data
+        # define estimate model name and pass in data
         # est = MarkovEstimation(data=df, model_name=estimate_model)
-        est = MarkovEstimation(subject_id=None, model_name=estimate_model, verbose=0)
+        est = MarkovEstimation(subject_id=None, model_name=estimate_model, drop_first_9=drop_first_9, verbose=False)
         est.data = df
 
         # start optimization
         res = opt.minimize(est.v_function, x0=x0, bounds=param_bounds, method="Nelder-Mead")
         return res
 
-        # # save outout
-        # if save_output:
-        #     MarkovEstimation.save_optimization_output(opt_result=res,
-        #                                               estimate_model=estimate_model,
-        #                                               subject_id=df['subject_id'].unique()[0],
-        #                                               save_output=save_output)
-        # return res
-
-    # @staticmethod
-    # def save_optimization_output(opt_result, estimate_model, subject_id, save_output):
-    #     # format opt results
-    #     param_names = MarkovEstimation().param_names
-    #     best_fit_param = dict(zip(param_names, opt_result['x']))
-    #     df = pd.DataFrame({**best_fit_param, 'maxLL':-1*opt_result['fun'], 'estimate_model': estimate_model, 'subject_id': subject_id}, index=[0]).round(4)
-    #
-    #     # define dest path
-    #     dest_file = os.path.join(save_output, '%s-%s-opt-result.csv' % (subject_id, estimate_model))
-    #
-    #     # append optimization if exist
-    #     if os.path.exists(dest_file):
-    #         mode = 'a'
-    #         header = False
-    #     else:
-    #         mode ='w'
-    #         header = True
-    #     df.to_csv(dest_file, index=False, mode=mode, header=header)
-    #     return df
-
-
     @staticmethod
     def try_estimate(subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
         """
         Try to estimate maxLL of a subject with a specific model
         According to Decker 2016,
-            - exclude first 9 trials
+            - drop first 9 trials
+            - only estimate 8 parameters (exclude latency parameters: lf and fixed cost)
             - applied following priors and bounds to parameters
             - randomly initialized parameter values
             - run 10 times
@@ -2079,7 +2053,7 @@ class MarkovEstimation():
         :param estimate_model:
         :return: a dataframe of all model MaxLL
         """
-        est = MarkovEstimation(model_name=estimate_model, subject_id=subject_id, drop_first_9=True, verbose=verbose)
+        est = MarkovEstimation(model_name=estimate_model, subject_id=subject_id, verbose=verbose)
         res = MarkovEstimation.optimization_function(df=est.data, x0=est.param_inits, param_bounds=est.param_bounds)
 
         dfp = pd.DataFrame(
@@ -2105,12 +2079,3 @@ class MarkovEstimation():
         dfp.to_csv(dest_file, index=False, mode=mode, header=header)
         if verbose: print('... SAVED optimized parameter data ...[%s] [%s]' %(subject_id, estimate_model))
         return dfp
-
-# >> model_name='markov-ibl-hybrid'
-# >> df = MarkovEstimateion.load_subject_data(subject_dir=subject_dir, subject_id='1')
-# >> MarkovIBL().estimate_LL(df, init=True, verbose=False, model_name=model_name,  **params)
-
-
-# subject_id = '1'
-# estimate_model = 'markov-rl-mf'
-# MarkovEstimation.try_estimate(subject_dir=subject_dir, subject_id=subject_id, estimate_model=estimate_model, save_output=0)
