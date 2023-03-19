@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import date
 
 SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname('../__file__')), 'script')
 sys.path.insert(0, SCRIPT_PATH)
@@ -8,24 +9,32 @@ sys.path.insert(0, SCRIPT_PATH)
 from markov_pyactup import *
 random.seed(0)
 
+TEST = False
+
+# define dir
 main_dir = os.path.dirname(os.getcwd())
 subject_dir = os.path.join(main_dir, 'data', 'human', 'online_data')
-
-# define output file dir
-dest_dir = os.path.join(main_dir, 'data', 'model', 'param_optimization_test')
-if not os.path.exists(dest_dir):
-    print('CREATE...', dest_dir)
-    os.mkdir(dest_dir)
-
 
 # define subject and models
 subject_ids = [str(i) for i in np.arange(1, 152)]
 subject_ids = np.array_split(subject_ids, 5)[0] # divide into 5 split
 estimate_models = ['markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid', 'markov-ibl-mb', 'markov-ibl-hybrid']
 epoch = 10
+dir_date = date.today().strftime("%m%y")
+
+if TEST:
+    epoch = 2
+    subject_ids = ['1', '2']
+    estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
+    dir_date = 'test'
+
+# define output file dir
+dest_dir = os.path.join(main_dir, 'data', 'model', 'param_optimization_%s' %(dir_date)
+if not os.path.exists(dest_dir):
+    print('CREATE...', dest_dir)
+    os.mkdir(dest_dir)
 
 
-# start estimations
 # start estimations
 for i in tqdm(range(len(subject_ids))):
     subject_id = subject_ids[i]
