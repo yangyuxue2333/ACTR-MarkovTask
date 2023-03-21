@@ -1584,23 +1584,23 @@ class MarkovEstimation():
         """
         param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
         # param_bounds = {'alpha':(0,1), 'beta':(0,30), 'beta_mf':(0,30), 'beta_mb':(0, 30), 'lambda_parameter':(0,1), 'p_parameter':(-30,30), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
-        param_bounds = {'alpha':(0,1), 'beta':(0,10), 'beta_mf':(0,10), 'beta_mb':(0,10), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
-        param_zero_bounds = {'alpha':(0.2,0.2), 'beta':(5,5), 'beta_mf':(5,5), 'beta_mb':(5,5), 'lambda_parameter':(0.2,0.2), 'p_parameter':(0,0), 'temperature':(0.2,0.2), 'decay':(0.5,0.5), 'lf':(0.5,0.5), 'fixed_cost':(0,0)}
+        param_bounds = {'alpha':(0,1), 'beta':(0,5), 'beta_mf':(0,5), 'beta_mb':(0,5), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
+        param_zero_bounds = {'alpha':(0.5,0.5), 'beta':(2,2), 'beta_mf':(2,2), 'beta_mb':(2,2), 'lambda_parameter':(0.5,0.5), 'p_parameter':(.5,.5), 'temperature':(0.2,0.2), 'decay':(0.5,0.5), 'lf':(0.5,0.5), 'fixed_cost':(0,0)}
 
         if self.kind == 'markov-rl-mf':
-            exclude = ['beta_mb', 'temperature', 'decay', 'lf', 'fixed_cost','p_parameter']
+            exclude = ['beta_mb', 'temperature', 'decay', 'lf', 'fixed_cost']
 
         elif self.kind == 'markov-rl-mb':
-            exclude = ['beta_mf', 'temperature', 'decay', 'lf', 'fixed_cost','p_parameter']
+            exclude = ['beta_mf', 'temperature', 'decay', 'lf', 'fixed_cost']
 
         elif self.kind == 'markov-rl-hybrid':
-            exclude = ['temperature', 'decay', 'lf', 'fixed_cost','p_parameter'] # exclude latency parameter
+            exclude = ['temperature', 'decay', 'lf', 'fixed_cost'] # exclude latency parameter
 
         elif self.kind == 'markov-ibl-mb':
-            exclude = ['beta', 'beta_mf', 'lf', 'fixed_cost','p_parameter'] # exclude latency parameter
+            exclude = ['beta', 'beta_mf', 'lf', 'fixed_cost'] # exclude latency parameter
 
         elif self.kind == 'markov-ibl-hybrid':
-            exclude = ['beta', 'lf', 'fixed_cost','p_parameter'] # exclude latency parameter
+            exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
 
         else:
             pass
@@ -1854,7 +1854,7 @@ class MarkovPlot(Plot):
         if combination:
             MarkovPlot.plot_param_effect_comb(df, model_name, param_name)
             return
-        g = sns.FacetGrid(df, col=param_name, col_wrap=3)
+        g = sns.FacetGrid(df, col=param_name, col_wrap=4)
         g.map_dataframe(sns.pointplot, x=Plot.REWARD_FACTOR, y='state1_stay_mean',
                         hue=Plot.TRANS_FACTOR, errorbar='se',
                         palette=Plot.PALETTE,
@@ -1868,7 +1868,7 @@ class MarkovPlot(Plot):
 
     @staticmethod
     def plot_param_effect_comb(df, model_name, param_name):
-        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT * 1.5))
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
         fig.suptitle('Summary: PStay Effect of [%s] on [%s]' % (param_name, model_name))
         ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
                            x=Plot.REWARD_FACTOR, y='state1_stay_mean',
@@ -1881,7 +1881,7 @@ class MarkovPlot(Plot):
                            palette='Reds',
                            order=['reward', 'non-reward'])
         ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
-        sns.move_legend(ax, "lower center", bbox_to_anchor=(.5, 1), ncol=3, title=param_name, frameon=False)
+        sns.move_legend(ax, "upper right", ncol=2, title=param_name, frameon=False)
         plt.tight_layout()
 
     @staticmethod
@@ -1919,3 +1919,43 @@ class MarkovPlot(Plot):
                            order=['reward', 'non-reward'])
         ax.axhline(1.09, color='grey', ls='-.', linewidth=.5)
         plt.tight_layout()
+
+    @staticmethod
+    def plot_response_switch(df, model_name, dep_var_suffix='', barplot=True):
+        """
+        Plot state1_stay by pre_received_reward and pre_state_frequency
+        :param df:
+        :param model_name:
+        :return:
+        """
+        assert set(Plot.PLOT_FACTOR_VAR + ['state1_stay' + dep_var_suffix]).issubset(set(df.columns))
+        if len(dep_var_suffix) > 0:
+            se = 'se'  # enable se
+        else:
+            se = None
+
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+        fig.suptitle('Summary: Stay Probability \n[%s]' % (model_name))
+        # pointplot
+        if not barplot:
+            sns.pointplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
+                          hue=Plot.TRANS_FACTOR, errorbar=se,
+                          palette=Plot.PALETTE, dodge=True,
+                          order=['reward', 'non-reward'],
+                          hue_order=['common', 'rare'],
+                          ax=ax)
+        # barplot
+        else:
+            sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
+                        hue=Plot.TRANS_FACTOR, errorbar=se,
+                        palette=Plot.PALETTE, alpha=.8,
+                        order=['reward', 'non-reward'],
+                        hue_order=['common', 'rare'],
+                        ax=ax)
+
+            # for container in ax.containers:
+            #     ax.bar_label(container, fmt='%.2f', label_type='center')
+        ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
+        ax.set_ylim(0, 1.1)
+        ax.legend().remove()
+        plt.show()
