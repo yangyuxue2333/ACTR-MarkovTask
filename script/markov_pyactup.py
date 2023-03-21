@@ -1597,7 +1597,7 @@ class MarkovEstimation():
             exclude = ['temperature', 'decay', 'lf', 'fixed_cost'] # exclude latency parameter
 
         elif self.kind == 'markov-ibl-mb':
-            exclude = ['beta', 'beta_mf', 'lf', 'fixed_cost'] # exclude latency parameter
+            exclude = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'lf', 'fixed_cost'] # exclude latency parameter
 
         elif self.kind == 'markov-ibl-hybrid':
             exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter

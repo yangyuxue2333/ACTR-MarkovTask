@@ -1284,31 +1284,36 @@ class Plot:
 
         plt.show()
     @staticmethod
-    def plot_response_time(df, model_name, combine=True, dep_var_suffix=''):
+    def plot_response_time(df, model_name, combine=True, dep_var_suffix='', barplot=True):
         assert set(Plot.PLOT_FACTOR_VAR + ['state1_response_time' + dep_var_suffix, 'state2_response_time' + dep_var_suffix]).issubset(set(df.columns))
         df = df.copy()
-        if df['state1_response_time' + dep_var_suffix].min() > 100:
-            df['state1_response_time' + dep_var_suffix] = df['state1_response_time' + dep_var_suffix] /1000
-            df['state2_response_time' + dep_var_suffix] = df['state2_response_time' + dep_var_suffix] / 1000
         df['response_time' + dep_var_suffix] = df['state1_response_time' + dep_var_suffix] + df['state2_response_time' + dep_var_suffix]
-
-        if len(dep_var_suffix) > 0:
-            se = 'se'  # enable se
-        else:
-            se = None
+        df['response_time' + dep_var_suffix] = df['response_time' + dep_var_suffix]/1000 if df['response_time' + dep_var_suffix].mean() > 100 else df['response_time' + dep_var_suffix]
         if combine:
-            fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+            fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH*1.5, Plot.FIT_HEIGHT*1.5))
             fig.suptitle('Summary: Response Time \n[%s]' % (model_name))
-            sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='response_time' + dep_var_suffix,
-                        hue=Plot.TRANS_FACTOR, errorbar=se,
-                        palette=Plot.PALETTE, alpha=.8,
-                        order=['reward', 'non-reward'],
-                        hue_order=['common', 'rare'],
-                        ax=ax)
 
-            for container in ax.containers:
-                ax.bar_label(container, fmt='%.2f', label_type='center')
-            ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
+            if barplot:
+                sns.barplot(data=df, x=Plot.REWARD_FACTOR, y='response_time' + dep_var_suffix,
+                            hue=Plot.TRANS_FACTOR, errorbar='se',
+                            palette=Plot.PALETTE, alpha=.8,
+                            order=['reward', 'non-reward'],
+                            hue_order=['common', 'rare'],
+                            ax=ax)
+
+                for container in ax.containers:
+                    ax.bar_label(container, fmt='%.2f', label_type='center')
+
+
+            else:
+                sns.pointplot(data=df, x=Plot.REWARD_FACTOR, y='response_time' + dep_var_suffix,
+                            hue=Plot.TRANS_FACTOR, errorbar='se',
+                            palette=Plot.PALETTE, dodge=True,
+                            order=['reward', 'non-reward'],
+                            hue_order=['common', 'rare'],
+                            ax=ax)
+
+            # ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
             ax.legend(loc='lower right')
             plt.show()
         else:
