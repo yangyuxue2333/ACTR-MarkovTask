@@ -1611,6 +1611,10 @@ class MarkovEstimation():
         self.param_bounds = [v for k, v in bounds.items() if k in self.param_names]
         self.param_inits = [np.round(np.random.uniform(l, u), 2) for (l, u) in self.param_bounds]
 
+        # grid search
+        self.param_ls = [np.unique(np.round(np.linspace(l, u, num=5), 2)) for (l, u) in self.param_bounds]
+        self.param_gs_ls = [dict(zip(self.param_names, c))for c in list(itertools.product(*self.param_ls))]
+
         # self.param_init = [np.random.beta(1.1,1.1), # alpha
         #                    np.random.gamma(3, 1),   # beta
         #                    np.random.gamma(3, 1),   # beta_mf
@@ -1844,6 +1848,40 @@ class MarkovEstimation():
         df_merge['LL'] = LL
         return df_merge
 
+    @staticmethod
+    def try_estimate_grid_search(dest_dir, model_name='markov-rl-hybrid', verbose=False):
+        """
+        Grid search optimization
+        :param dest_dir:
+        :param model_name:
+        :param verbose:
+        :return:
+        """
+
+        dest_dir = os.path.join(dest_dir, model_name)
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir, exist_ok=True)
+            if verbose: print('...CREATE ', dest_dir)
+
+        est = MarkovEstimation(model_name=model_name)
+
+        # prepare param log
+        dfp = pd.DataFrame(est.param_gs_ls)
+        dfp['model_name'] = est.kind
+        dfp['param_id'] = ['param_id%05d'% i for i in dfp.index]
+        dfp.to_csv(os.path.join(dest_dir, '%s-param-log.csv' %(model_name)), index=False)
+
+        # start grid search simulation
+        param_id = 0
+        for params in est.param_gs_ls:
+            df = MarkovSimulation.run_simulations(model=model_name, e=100, verbose=verbose, **params)
+            df['param_id'] = param_id
+            df['model_name'] = est.kind
+
+            dest_f = os.path.join(dest_dir, '%s-param_id%05d-sim.csv' % (model_name, param_id))
+            df.to_csv(dest_f, index=False)
+            param_id += 1
+            if verbose: print('...SAVE [%s] [%d]' % (est.kind, param_id))
 
 class MarkovPlot(Plot):
     """
