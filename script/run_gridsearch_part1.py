@@ -15,7 +15,7 @@ TEST = False
 main_dir = os.path.dirname(os.getcwd())
 
 # define subject and models
-estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
+estimate_models = ['markov-ibl-hybrid']
 
 
 dir_date = date.today().strftime("%m%y")
@@ -33,6 +33,27 @@ if not os.path.exists(dest_dir):
 
 # start estimations
 for model_name in estimate_models:
-    MarkovEstimation.try_estimate_grid_search(dest_dir, model_name=model_name, verbose=False)
+
+    dest_dir = os.path.join(dest_dir, model_name)
+    if not os.path.exists(dest_dir):
+        os.makedirs(dest_dir, exist_ok=True)
+        print('...CREATE ', dest_dir)
+
+    est = MarkovEstimation(model_name=model_name)
+
+    # prepare param log
+    p_log = os.path.join(dest_dir, '%s-param-log.csv' % (model_name))
+    if not os.path.exists(p_log):
+        dfp = pd.DataFrame(est.param_gs_ls)
+        dfp['model_name'] = est.kind
+        dfp['param_id'] = ['param_id%05d' % i for i in dfp.index]
+        dfp.to_csv(p_log, index=False)
+
+    # start grid search simulation
+    param_id_list = np.arange(len(est.param_gs_ls))
+    param_id_list = np.array_split(param_id_list, 5)[0]  # divide into 5 split
+
+    for param_id in param_id_list:
+        MarkovEstimation.try_estimate_grid_search(dest_dir, model_name=model_name, param_id=param_id, verbose=True, overwrite=False)
 
 print('...FINISHED...')

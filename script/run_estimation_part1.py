@@ -17,12 +17,12 @@ subject_dir = os.path.join(main_dir, 'data', 'human', 'online_data')
 
 # define subject and models
 subject_ids = [str(i) for i in np.arange(1, 152)]
-subject_ids = np.array_split(subject_ids, 5)[0] # divide into 5 split
+subject_ids = np.array_split(subject_ids, 5)[4] # divide into 5 split
 estimate_models = ['markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid', 'markov-ibl-mb', 'markov-ibl-hybrid']
-estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
+estimate_models = [ 'markov-ibl-mb']
 
 epoch = 10
-dir_date = date.today().strftime("%m%y")
+dir_date = date.today().strftime("%m%d")
 
 if TEST:
     epoch = 2
@@ -35,6 +35,7 @@ dest_dir = os.path.join(main_dir, 'data', 'model', 'param_optimization_%s' %(dir
 if not os.path.exists(dest_dir):
     print('CREATE...', dest_dir)
     os.mkdir(dest_dir)
+
 
 
 # start estimations
