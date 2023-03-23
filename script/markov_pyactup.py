@@ -1228,7 +1228,9 @@ class MarkovIBL(MarkovState):
         self.memory.activation_history = []
 
         # start retrieving
-        retrieved_memory = self.memory.retrieve(**kwargs)
+        retrieved_memory = None
+        while retrieved_memory is None:
+            retrieved_memory = self.memory.retrieve(**kwargs)
         self.memory.advance()
 
         # get activation from history records (max activation value of all retrieval candidates)
@@ -1849,7 +1851,7 @@ class MarkovEstimation():
         return df_merge
 
     @staticmethod
-    def try_estimate_grid_search(dest_dir, model_name='markov-rl-hybrid', verbose=False):
+    def try_estimate_grid_search(dest_dir, model_name='markov-rl-hybrid', param_id = 0, verbose=False, overwrite=False):
         """
         Grid search optimization
         :param dest_dir:
@@ -1857,31 +1859,26 @@ class MarkovEstimation():
         :param verbose:
         :return:
         """
+        p_log = os.path.join(dest_dir, '%s-param-log.csv' % (model_name))
+        dfp = pd.read_csv(p_log)
 
-        dest_dir = os.path.join(dest_dir, model_name)
-        if not os.path.exists(dest_dir):
-            os.makedirs(dest_dir, exist_ok=True)
-            if verbose: print('...CREATE ', dest_dir)
+        dest_f = os.path.join(dest_dir, '%s-param_id%05d-sim.csv' % (model_name, param_id))
 
-        est = MarkovEstimation(model_name=model_name)
-
-        # prepare param log
-        dfp = pd.DataFrame(est.param_gs_ls)
-        dfp['model_name'] = est.kind
-        dfp['param_id'] = ['param_id%05d'% i for i in dfp.index]
-        dfp.to_csv(os.path.join(dest_dir, '%s-param-log.csv' %(model_name)), index=False)
-
-        # start grid search simulation
-        param_id = 0
-        for params in est.param_gs_ls:
+        if not os.path.exists(dest_f) or overwrite:
+            d = dfp.iloc[param_id,:].to_dict()
+            params = {key: d[key] for key in d.keys() if key not in ['model_name', 'param_id']}
             df = MarkovSimulation.run_simulations(model=model_name, e=100, verbose=verbose, **params)
-            df['param_id'] = param_id
-            df['model_name'] = est.kind
+            df['param_id'] = d['param_id']
+            df['model_name'] = d['model_name']
 
-            dest_f = os.path.join(dest_dir, '%s-param_id%05d-sim.csv' % (model_name, param_id))
-            df.to_csv(dest_f, index=False)
-            param_id += 1
-            if verbose: print('...SAVE [%s] [%d]' % (est.kind, param_id))
+            try:
+                df.to_csv(dest_f, index=False)
+                if verbose: print('...SAVE [%s] [%d]' % (model_name, param_id))
+            except:
+                pass
+        else:
+            if verbose: print('...Skip [%d]' % (param_id))
+        param_id += 1
 
 class MarkovPlot(Plot):
     """
