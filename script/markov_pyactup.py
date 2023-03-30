@@ -1830,7 +1830,8 @@ class MarkovEstimation():
         return LL
 
     @staticmethod
-    def calculate_LL(df_model, df_subject, factor_cols=['pre_received_reward', 'pre_state_frequency'],
+    def calculate_LL(df_model, df_subject,
+                     factor_cols=['pre_received_reward', 'pre_state_frequency'],
                      dv_name='state1_stay', return_numeric=True):
         """
         Calcualte LL of PSWitch
