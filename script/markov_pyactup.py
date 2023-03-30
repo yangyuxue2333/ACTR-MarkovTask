@@ -1228,10 +1228,15 @@ class MarkovIBL(MarkovState):
         self.memory.activation_history = []
 
         # start retrieving
-        retrieved_memory = None
-        while retrieved_memory is None:
-            retrieved_memory = self.memory.retrieve(**kwargs)
+        retrieved_memory = self.memory.retrieve(**kwargs)
         self.memory.advance()
+        # if None, randomly select one chunk from memory
+        # satisfying kwargs constraints
+        if retrieved_memory is None:
+            constraints = {k:kwargs[k] for k in kwargs.keys() if k not in ('rehearse')}
+            retrieved_memory = random.choice([d for d in [dict(m) for m in list(self.memory)] if constraints.items() <= d.items()])
+            self.memory.activation_history = []
+            return retrieved_memory
 
         # get activation from history records (max activation value of all retrieval candidates)
         activation = MarkovIBL.activation_score(self.memory.activation_history)
@@ -1994,3 +1999,295 @@ class MarkovPlot(Plot):
         ax.set_ylim(0, 1.1)
         ax.legend().remove()
         plt.show()
+
+
+class MarkovMaxLogLikelihood(MaxLogLikelihood):
+
+    @staticmethod
+    def process_subject_data_online(main_dir, raw_subject_dir, new_subject_dir, subject_id='sub1', overwrite=False,
+                                    verbose=True):
+        """
+        raw_subject_dir = 'data/human/online_csvs'
+        new_subject_dir = 'data/human/subject_data'
+        subject_id = 'sub1'
+        """
+        subject_ids = np.sort(
+            [f.split('_')[-1].split('.')[0] for f in os.listdir(os.path.join(main_dir, raw_subject_dir)) if
+             f.endswith('.csv')])
+        for subject_id in subject_ids:
+            try:
+                # read raw subject data
+                df = pd.read_csv(os.path.join(main_dir, raw_subject_dir, 'mbmf_%s.csv' % (subject_id))).dropna(
+                    subset=['trial_stage'], axis=0)
+                # select useful columns
+                # choice=1 (key 49) choice=2(key 48), otherwise na
+                usecols = ['subject_id', 'trial_index', 'practice_trial', 'reward', 'transition', 'transition_type',
+                           'choice', 'trial_stage', 'rt']
+
+                # process practice data
+                df_practice = df[df['practice_trial'] == 'practice'][usecols].sort_values(by='trial_index')
+
+                df_practice1 = df_practice[df_practice['trial_stage'] == '1'][
+                    ['subject_id', 'trial_index', 'choice', 'rt']]
+                df_practice1['index'] = np.arange(len(df_practice1))
+                df_practice1 = df_practice1.rename(
+                    columns={'choice': 'state1_response', 'rt': 'state1_response_time'}).drop(columns=['trial_index'])
+
+                df_practice2 = df_practice[df_practice['trial_stage'] == '2'][
+                    ['subject_id', 'trial_index', 'transition', 'reward', 'choice', 'rt']]
+                df_practice2['index'] = np.arange(len(df_practice2))
+                df_practice2 = df_practice2.rename(
+                    columns={'choice': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
+                             'transition': 'state_frequency'}).drop(columns=['trial_index'])
+
+                # unstack df to wide format
+                df_practice_wide = pd.merge(df_practice1, df_practice2, on=['subject_id', 'index'])
+                df_practice_wide['pre_received_reward'] = df_practice_wide['received_reward'].shift()
+                df_practice_wide['pre_state_frequency'] = df_practice_wide['state_frequency'].shift()
+                df_practice_wide['pre_state1_response'] = df_practice_wide['state1_response'].shift()
+                df_practice_wide['state1_stay'] = df_practice_wide.apply(
+                    lambda x: 1 if x['pre_state1_response'] == x['state1_response'] else 0, axis=1)
+                df_practice_wide = df_practice_wide.dropna(axis=0)
+                df_practice_wide['pre_received_reward'] = df_practice_wide.apply(
+                    lambda x: 'reward' if int(x['pre_received_reward']) == 1 else 'non-reward', axis=1)
+
+                # process test data
+                df_test = df[df['practice_trial'] == 'real'][usecols].sort_values(by='trial_index')
+                df_test1 = df_test[df_test['trial_stage'] == '1'][['subject_id', 'trial_index', 'choice', 'rt']]
+                df_test1['index'] = np.arange(len(df_test1))
+                df_test1 = df_test1.rename(columns={'choice': 'state1_response', 'rt': 'state1_response_time'}).drop(
+                    columns=['trial_index'])
+
+                df_test2 = df_test[df_test['trial_stage'] == '2'][
+                    ['subject_id', 'trial_index', 'transition', 'reward', 'choice', 'rt']]
+                df_test2['index'] = np.arange(len(df_test2))
+                df_test2 = df_test2.rename(
+                    columns={'choice': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
+                             'transition': 'state_frequency'}).drop(columns=['trial_index'])
+
+                # unstack data to wide format
+                df_test_wide = pd.merge(df_test1, df_test2, on=['subject_id', 'index'])
+                df_test_wide['pre_received_reward'] = df_test_wide['received_reward'].shift()
+                df_test_wide['pre_state_frequency'] = df_test_wide['state_frequency'].shift()
+                df_test_wide['pre_state1_response'] = df_test_wide['state1_response'].shift()
+                df_test_wide['state1_stay'] = df_test_wide.apply(
+                    lambda x: 1 if x['pre_state1_response'] == x['state1_response'] else 0, axis=1)
+                df_test_wide = df_test_wide.dropna(axis=0)
+                df_test_wide['pre_received_reward'] = df_test_wide.apply(
+                    lambda x: 'reward' if int(x['pre_received_reward']) == 1 else 'non-reward', axis=1)
+
+                # reorder columns
+                col_order = ['subject_id', 'index', 'state_frequency', 'received_reward',
+                             'pre_received_reward', 'pre_state_frequency',
+                             'state1_response', 'state2_response', 'state1_stay', 'state1_response_time',
+                             'state2_response_time']
+                df_practice_wide = df_practice_wide[col_order]
+                df_test_wide = df_test_wide[col_order]
+
+                dest_dir = os.path.join(main_dir, new_subject_dir, subject_id)
+                if (not os.path.exists(os.path.join(dest_dir, 'test.csv'))) or overwrite:
+                    df_practice_wide.to_csv(os.path.join(dest_dir, 'prac.csv'))
+                    df_test_wide.to_csv(os.path.join(dest_dir, 'test.csv'))
+                    if verbose: print('...PROCESS SUBJECT DATA [%s]' % (subject_id))
+                else:
+                    if verbose: print('...SKIP SUBJECT DATA [%s]' % (subject_id))
+            except:
+                print('error...', subject_id)
+                continue
+
+    @staticmethod
+    def save_agg_subject_data(main_dir, subject_dir, overwrite=True, verbose=True):
+        subject_ids = ['sub' + str(i) for i in np.arange(1, 152)]
+        for subject_id in subject_ids:
+            for trial_type in ['prac', 'test']:
+                try:
+                    f = os.path.join(main_dir, subject_dir, subject_id, trial_type + '.csv')
+                    df_subject = pd.read_csv(f, index_col=0)
+                    df_subject_agg = MarkovMaxLogLikelihood.calculate_agg_data(df=df_subject, data_id=subject_id)
+
+                    dest_dir = os.path.join(main_dir, subject_dir, subject_id, 'aggregate')
+
+                    if (not os.path.exists(dest_dir)) or overwrite:
+                        if not os.path.exists(dest_dir):
+                            os.mkdir(dest_dir)
+                        df_subject_agg.to_csv(os.path.join(dest_dir, trial_type + '-agg.csv'), header=True, index=False)
+                        if verbose: print('\tSAVING SUBJECT AGG FILE...ID [%s]' % (subject_id))
+                    else:
+                        if verbose: print('\tSKIP SUBJECT ID [%s]' % (subject_id))
+                except:
+                    print('\tERROR SUBJECT ID [%s]' % (subject_id))
+                    continue
+
+    @staticmethod
+    def calculate_agg_data_standard(df, data_id):
+        """
+        """
+        df = df.astype({'pre_state_frequency': CategoricalDtype(categories=['rare', 'common'], ordered=True),
+                        'pre_received_reward': CategoricalDtype(categories=['non-reward', 'reward'], ordered=True)})
+
+        group_var = MaxLogLikelihood.MAXLL_FACTOR_VAR
+        dep_dict = {var: ('mean', 'std', 'sem') for var in MaxLogLikelihood.MAXLL_DEP_VAR}
+        df_agg = df.groupby(group_var).agg(dep_dict).reset_index().fillna(0.0)
+        df_agg['data_id'] = data_id
+
+        # flatten columns
+        df_agg.columns = ['%s%s' % (a, '_%s' % b if b else '') for a, b in df_agg.columns]
+        return df_agg
+
+    @staticmethod
+    def calculate_agg_data(df, data_id):
+        if len(df) !=4:
+            df = MarkovMaxLogLikelihood.calculate_agg_data_standard(df, data_id=data_id)
+        df1 = pd.concat([df.groupby(['pre_received_reward']).agg(
+            state1_stay_mean=('state1_stay_mean', 'mean')).reset_index().rename(
+            columns={'pre_received_reward': 'group_var'}),
+                         df.groupby(['pre_state_frequency']).agg(
+                             state1_stay_mean=('state1_stay_mean', 'mean')).reset_index().rename(
+                             columns={'pre_state_frequency': 'group_var'})], axis=0)
+
+        df2 = pd.DataFrame({
+            'group_var': ['C-R|NR', 'C-R|R', 'R-NR|C', 'R-NR|R'],
+            'state1_stay_mean': [df.loc[0, 'state1_stay_mean'] - df.loc[1, 'state1_stay_mean'],
+                                 df.loc[2, 'state1_stay_mean'] - df.loc[3, 'state1_stay_mean'],
+                                 df.loc[2, 'state1_stay_mean'] - df.loc[0, 'state1_stay_mean'],
+                                 df.loc[3, 'state1_stay_mean'] - df.loc[1, 'state1_stay_mean']]})
+
+        df_agg = pd.concat([df1, df2], axis=0).reset_index().drop(columns=['index'])
+        df_agg['data_id'] = data_id
+        df_agg = df_agg.astype({'group_var': CategoricalDtype(categories=['reward', 'non-reward','common', 'rare',
+                                                                              'C-R|NR', 'C-R|R', 'R-NR|C', 'R-NR|R'], ordered=True)})
+        return df_agg
+
+    @staticmethod
+    def calcualte_agg_model_data(df, data_id):
+        df_list = []
+        for e in df['epoch'].unique():
+            dfe = df[df['epoch']==e]
+            df_list.append(MarkovMaxLogLikelihood.calculate_agg_data(dfe, data_id=data_id))
+        dff = pd.concat(df_list, axis=0)
+        dff.groupby(['group_var']).agg(state1_stay_mean=('state1_stay_mean', 'mean'),
+                                       state1_stay_std=('state1_stay_mean', 'std')).reset_index()
+        dff['data_id'] = data_id
+        return dff
+
+
+
+    @staticmethod
+    def save_agg_model_data(main_dir, model_dir, verbose=True, overwrite=False):
+        dfp = pd.read_csv(glob.glob(os.path.join(main_dir, model_dir, '*-log.csv'))[0])
+        for param_id in dfp['param_id'].tolist():
+            try:
+                f = glob.glob(os.path.join(main_dir, model_dir, '*%s*' % param_id))[0]
+                df_model = pd.read_csv(f)
+                df_model = df_model.rename({'state1_stay_mean': 'state1_stay',
+                                            'state1_response_time_mean': 'state1_response_time',
+                                            'state2_response_time_mean': 'state2_response_time'}, axis=1)
+                df_model_agg = MarkovMaxLogLikelihood.calculate_agg_data(df=df_model, data_id=param_id)
+
+                # save agg model data
+                dest_dir = os.path.join(main_dir, model_dir, 'aggregate')
+                dest_f = f.split('/')[-1].replace("-sim", "-agg")
+                # check exists
+                if (not os.path.exists(dest_f)) or overwrite:
+                    if not os.path.exists(dest_dir):
+                        os.mkdir(dest_dir)
+                    df_model_agg.to_csv(os.path.join(dest_dir, dest_f), header=True, index=False)
+                    if verbose: print('\tSAVING MODEL AGG FILE...ID[%s]' % (param_id))
+            except:
+                print('\tERROR PARAM ID [%s]' % (param_id))
+                continue
+
+    @staticmethod
+    def load_model_agg_data(main_dir, model_dir):
+        """
+        load model agg data for all param_id and concat to one single df
+        """
+        model_agg_files = glob.glob(os.path.join(main_dir, model_dir, 'aggregate', '*-agg.csv'))
+        model_agg = pd.concat([pd.read_csv(f).convert_dtypes() for f in model_agg_files], axis=0)
+        model_agg['model_name'] = model_dir.split('/')[-1]
+        return model_agg
+
+    @staticmethod
+    def calculate_maxLL(df_LL, main_dir, model_dir):
+        assert ('LL' in df_LL.columns)
+        maxLL = df_LL['LL'].max()
+        df_maxLL = df_LL[df_LL['LL'] == maxLL]
+        return df_maxLL
+
+    @staticmethod
+    def save_maxLL_data(df, main_dir, subject_dir, special_suffix='', overwrite=False, verbose=True):
+        """
+        Save LL data
+        """
+        assert (len(df['model_name'].unique()) == 1 and len(df['data_id.s'].unique()) == 1)
+
+        df = df.reset_index().drop(columns=['index'])
+        # define destination dir
+        model_name = df['model_name'].unique()[0]
+        subject_id = df['data_id.s'].unique()[0]
+
+        dest_dir = os.path.join(main_dir, subject_dir, subject_id, 'maxll')
+        dest_file_name = subject_id + '-' + model_name + special_suffix + '.csv'
+        if (not os.path.exists(os.path.join(dest_dir, dest_file_name))) or overwrite:
+            if not os.path.exists(dest_dir):
+                os.mkdir(dest_dir)
+            df.to_csv(os.path.join(dest_dir, dest_file_name), index=False)
+
+        return df
+
+    @staticmethod
+    def run_maxLL_pipline(main_dir, model_dir, raw_subject_dir, model_name, new_subject_dir: 'str', overwrite=False,
+                          verbose=True):
+        """
+        This function integrates all necessary steps to estimate maxLL
+        """
+
+        # step 0: pre-process subject data to match our model data structure
+        MarkovMaxLogLikelihood.process_subject_data_online(main_dir=main_dir,
+                                                     raw_subject_dir=raw_subject_dir,
+                                                     new_subject_dir=new_subject_dir,
+                                                     overwrite=overwrite,
+                                                     verbose=verbose)
+
+        # step 1: post-process subject data: aggregate by group variable
+        MarkovMaxLogLikelihood.save_agg_subject_data(main_dir=main_dir,
+                                               subject_dir=new_subject_dir,
+                                               overwrite=overwrite,
+                                               verbose=verbose)
+
+        # step 2: post-process model data: aggregate by group variable
+        MarkovMaxLogLikelihood.save_agg_model_data(main_dir=main_dir,
+                                             model_dir=model_dir,
+                                             overwrite=overwrite,
+                                             verbose=verbose)
+
+        # step 3: iterate subject data
+        subject_ids = os.listdir(os.path.join(main_dir, new_subject_dir))
+        for subject_id in subject_ids:
+            for subject_data_type in ['prac', 'test']:
+                subject_file = os.path.join(main_dir, new_subject_dir, subject_id, 'aggregate',
+                                            subject_data_type + '-agg.csv')
+                subject_agg = pd.read_csv(subject_file).convert_dtypes()
+
+                # step 4: load model agg data for all param_id
+                model_agg = MarkovMaxLogLikelihood.load_model_agg_data(main_dir=main_dir, model_dir=model_dir,
+                                                                 model_name=model_name)
+
+                # calcualte LL maxLL data
+                df_LL = MarkovMaxLogLikelihood.calculate_LL(subject_agg, model_agg, model_name=model_name)
+                df_maxLL = MarkovMaxLogLikelihood.calculate_maxLL(df_LL, main_dir=main_dir, model_dir=model_dir)
+
+                # save LL maxLL data
+                MarkovMaxLogLikelihood.save_maxLL_data(df_maxLL, main_dir=main_dir,
+                                                 subject_dir=new_subject_dir,
+                                                 special_suffix='-maxll',
+                                                 overwrite=overwrite,
+                                                 verbose=verbose)
+                MarkovMaxLogLikelihood.save_maxLL_data(df_LL,
+                                                 main_dir=main_dir,
+                                                 subject_dir=new_subject_dir,
+                                                 special_suffix='-ll',
+                                                 overwrite=False,
+                                                 verbose=verbose)
+
+
