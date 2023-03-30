@@ -900,7 +900,7 @@ class MarkovIBL(MarkovState):
         # softmax choice rule
         p = expit(mb_value + rep * self.p_parameter)
 
-        # save expecetd value of mb = beta_mb * q_value
+        # save expected q value of mb = beta_mb * q_value
         self.markov_state._mb_value = mb_value
         self.markov_state._state1_p = p
         return p
@@ -964,14 +964,14 @@ class MarkovIBL(MarkovState):
             # decide action based on highest Q
             max_id = np.argmax(next_state_max_q)
             a = self.action_space[max_id]
-            q_mb = abs(next_state_max_q[0] - next_state_max_q[1])# max
+            q_mb = next_state_max_q[0] - next_state_max_q[1]  # left - right
 
         # estimate from data (response is known)
         else:
-            a = self.action_space[0]  # always eval left
+            a = self.action_space[0]  # always evaluate left
             s_ = self.start_retrieving(rehearse=False, curr_state='A', response=a)['next_state']
             alt_s_ = MarkovIBL.return_alternative_item(['B', 'C'], s_)
-            q_mb = abs(max([q[(s_, a)] for a in self.action_space]) - max([q[(alt_s_, a)] for a in self.action_space])) #max
+            q_mb = max([q[(s_, a)] for a in self.action_space]) - max([q[(alt_s_, a)] for a in self.action_space])  # left - right
 
         # scale by beta_mb
         mb_value = self.beta_mb * q_mb
