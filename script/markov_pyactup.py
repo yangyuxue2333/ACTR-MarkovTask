@@ -1687,6 +1687,7 @@ class MarkovSimulation():
         """
         # define subject and models
         subject_ids = [str(i) for i in np.arange(1, 152)]
+        # subject_ids = np.array_split(subject_ids, 5)[0]  # divide into 5 split
         estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
 
         d1 = os.path.join(pr_dir, 'opt_original')
@@ -1704,8 +1705,7 @@ class MarkovSimulation():
             if verbose: print('START OPT ORI...')
 
             # start optimization
-            for i in tqdm(range(len(subject_ids))):
-                subject_id = subject_ids[i]
+            for subject_id in subject_ids:
                 for estimate_model in estimate_models:
                         MarkovEstimation.try_estimate(subject_dir=None, # default
                                                       subject_id=subject_id,
@@ -1737,8 +1737,7 @@ class MarkovSimulation():
             if verbose: print('START OPT REC...')
 
             # start optimization
-            for i in tqdm(range(len(subject_ids))):
-                subject_id = subject_ids[i]
+            for subject_id in subject_ids:
                 for estimate_model in estimate_models:
                     MarkovEstimation.try_estimate(subject_dir=d2,
                                                   subject_id=subject_id,
