@@ -944,6 +944,9 @@ class MarkovIBL(MarkovState):
         return p
 
     def evaluate_ibl_mb(self, response=None):
+        return self.evaluate_ibl_mb1(response=response)
+
+    def evaluate_ibl_mb1(self, response=None):
         """
         Implemented based on to Andrea's idea: use IBL to retrieve frequency, use RL-Q learning to evaluate Q
             q_mb = diff Q value of two s_
@@ -984,8 +987,63 @@ class MarkovIBL(MarkovState):
         self.markov_state._state1_p = p
         return a
 
+    def evaluate_ibl_mb2(self, response=None):
+        """
+        Implemented based on to memory sampling idea
+
+        :param response:
+        :return:
+        """
+        assert self.markov_state._curr_stage == '1'
+        # Q(MF)
+        if not response:
+            response = self.action_space[0]  # always eval left
+
+        q = self.q.copy()
+        b_value = max([q[('B', a)] for a in self.action_space])
+        c_value = max([q[('C', a)] for a in self.action_space])
+
+        # Determine the choice
+        # Sampling memory
+        estimated_freq = self.sampling_memory(response=response)
+        if COMMON_TRANS[response] == 'B':
+            q_mb = (2 * estimated_freq - 1) * (b_value - c_value)
+        else:
+            q_mb = (2 * estimated_freq - 1) * (c_value - b_value)
+
+        # scale by beta_mb
+        mb_value = self.beta_mb * q_mb
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == response else -1
+
+        # softmax choice rule
+        p = expit(mb_value + rep * self.p_parameter)
+
+        # decide action
+        if random.random() < p:
+            a = response
+        else:
+            a = MarkovIBL.return_alternative_item(self.action_space, response)
+
+        # save expected q value of mb = beta_mb * q_value
+        self.markov_state._mb_value = mb_value
+        self.markov_state._state1_p = p
+        return a
+
+    def sampling_memory(self, response, n=10):
+        samples = [self.memory.retrieve(rehearse=False, curr_state='A', response=response)['next_state'] for i in range(n)]
+        estimated_freq = np.round(samples.count('B')/n, 2)
+        return estimated_freq
 
     def evaluate_ibl_hybrid(self, response=None):
+        return self.evaluate_ibl_hybrid1(response=response)
+
+    def evaluate_ibl_hybrid1(self, response=None):
         """
         A combination of RL-MF + IBL-MB
         The potential problem of this model is, no matter what, it will go through MB evaluation process
@@ -1025,6 +1083,49 @@ class MarkovIBL(MarkovState):
         self.markov_state._hybrid_value = hybrid_value
         return a
 
+    def evaluate_ibl_hybrid2(self, response=None):
+        """
+        According to Daw 2011
+        Evaluate Q table using RL-Hybrid
+        >> best parameter combination
+            alpha=.5,
+            beta=5,
+            p_parameter=0,
+            lambda_parameter=.6
+            beta_mf
+            beta_mb
+        """
+        if not response:
+            response = self.action_space[0]  # always eval left
+
+        self.evaluate_rl_mf(response=response)
+        self.evaluate_ibl_mb(response=response)
+
+        # note: no need to x beta_mf since mf_value is already multiplied by beta_mf
+        hybrid_value = self.markov_state._mf_value + self.markov_state._mb_value
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == response else -1
+
+        # softmax choice rule
+        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
+
+        if random.random() < p:
+            a = response
+        else:
+            a = MarkovIBL.return_alternative_item(self.action_space, response)
+
+        # Q(Hybrid)
+        self.markov_state._state1_p = p
+        self.markov_state._hybrid_value = hybrid_value
+        return a
+
+
+
     def retrieve_response_from_state(self, s_):
         """
         Retrieve the response that mostly likely leads to next state s_
@@ -1036,6 +1137,8 @@ class MarkovIBL(MarkovState):
         retrieved_response = retrieved_memory['response']
         self.memory.advance()
         return retrieved_response
+
+
 
     # =================================================== #
     # CHOOSE STATE1
@@ -1230,6 +1333,13 @@ class MarkovIBL(MarkovState):
         # start retrieving
         retrieved_memory = self.memory.retrieve(**kwargs)
         self.memory.advance()
+        # if None, randomly select one chunk from memory
+        # satisfying kwargs constraints
+        if retrieved_memory is None:
+            constraints = {k:kwargs[k] for k in kwargs.keys() if k not in ('rehearse')}
+            retrieved_memory = random.choice([d for d in [dict(m) for m in list(self.memory)] if constraints.items() <= d.items()])
+            self.memory.activation_history = []
+            return retrieved_memory
 
         # get activation from history records (max activation value of all retrieval candidates)
         activation = MarkovIBL.activation_score(self.memory.activation_history)
@@ -1480,7 +1590,7 @@ class MarkovSimulation():
     GROUP_VAR = ['pre_received_reward', 'pre_state_frequency']
 
     @staticmethod
-    def run_single_simulation(model='markov-ibl-mb', n=200, verbose=False, **params):
+    def run_single_simulation(model='markov-ibl-mb', n=201, verbose=False, **params):
 
         m = MarkovIBL(model=model, verbose=verbose)
         m.update_parameters(**params)
@@ -1489,7 +1599,7 @@ class MarkovSimulation():
         return m
 
     @staticmethod
-    def run_simulations(model='markov-ibl-mb', e=1, n=200, verbose=False, **params):
+    def run_simulations(model='markov-ibl-mb', e=1, n=201, verbose=False, **params):
         df_list = []
         for i in tqdm(range(e)):
             m = MarkovIBL(model=model, verbose=False)
@@ -1536,9 +1646,9 @@ class MarkovSimulation():
         est = MarkovEstimation(model_name=model_name)
         # params =  dict(zip(est.param_names, est.param_inits))
         params = {'alpha': 0.2,
-                  'beta': 5,
-                  'beta_mf': 5,
-                  'beta_mb': 5,
+                  'beta': 2,
+                  'beta_mf': 2,
+                  'beta_mb': 2,
                   'lambda_parameter': .5,
                   'p_parameter': 0,
                   'temperature': 0.2,
@@ -1567,14 +1677,84 @@ class MarkovSimulation():
                 return dff
         return dff
 
+    @staticmethod
+    def simulate_param_recovery(pr_dir, verbose=False):
+        """
+        Run parameter recovery anlaysis
+        :param df_opt:
+        :param des_dir:
+        :return:
+        """
+        # define subject and models
+        subject_ids = [str(i) for i in np.arange(1, 152)][:2]
+        estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
+
+        d1 = os.path.join(pr_dir, 'opt_original')
+        d2 = os.path.join(pr_dir, 'fake_subject')
+        d3 = os.path.join(pr_dir, 'opt_recovered')
+
+        if not os.path.exists(d1):
+            print('CREATE DIR...')
+            os.makedirs(d1, exist_ok=True)
+            os.makedirs(d2, exist_ok=True)
+            os.makedirs(d3, exist_ok=True)
+
+        # start run original optimization
+        if len(os.listdir(d1)) < len(subject_ids)*len(estimate_models):
+            if verbose: print('START OPT ORI...')
+
+            # start optimization
+            for i in tqdm(range(len(subject_ids))):
+                subject_id = subject_ids[i]
+                for estimate_model in estimate_models:
+                        MarkovEstimation.try_estimate(subject_dir=None, # default
+                                                      subject_id=subject_id,
+                                                      estimate_model=estimate_model,
+                                                      save_output=d1,
+                                                      verbose=verbose)
+
+        # start run single simulation
+        if len(os.listdir(d2)) < len(subject_ids):
+            if verbose: print('START SINGLE RUN SIMULATION...')
+            df_opt = MarkovEstimation.load_optimization_data(opt_dir=d1, estimate_models=['markov-ibl-hybrid'])
+            for i, row in df_opt.iterrows():
+                d = dict(row)
+                estimate_model = d['estimate_model']
+                subject_id = d['subject_id']
+                params = {key: d[key] for key in PARAMETER_NAMES}
+
+                # run single simulation
+                m = MarkovSimulation.run_single_simulation(model=estimate_model, verbose=False, **params)
+                df_fake = m.df_behaviors()
+                df_fake['subject_id']='sub%d' % subject_id
+
+                # save data
+                os.makedirs(os.path.join(d2, 'sub%d' % (subject_id)), exist_ok=True)
+                df_fake.to_csv(os.path.join(d2, 'sub%d' % (subject_id), 'test.csv'))
+
+        # start run recovered optimization
+        if len(os.listdir(d3)) < len(subject_ids)*len(estimate_models):
+            if verbose: print('START OPT REC...')
+
+            # start optimization
+            for i in tqdm(range(len(subject_ids))):
+                subject_id = subject_ids[i]
+                for estimate_model in estimate_models:
+                    MarkovEstimation.try_estimate(subject_dir=d2,
+                                                  subject_id=subject_id,
+                                                  estimate_model=estimate_model,
+                                                  save_output=d3,
+                                                  verbose=verbose)
+
+
 class MarkovEstimation():
-    def __init__(self, model_name='markov-rl-mf', subject_id=None, drop_first_9=False, verbose=False):
+    def __init__(self, model_name='markov-rl-mf', subject_dir=None, subject_id=None, drop_first_9=False, verbose=False):
         self.kind = model_name
         self.verbose = verbose
 
         # init parameter bounds, init values and load subject data
         self.init_estimated_params()
-        self.init_data(subject_id=subject_id, drop_first_9=drop_first_9)
+        self.init_data(subject_dir=subject_dir, subject_id=subject_id, drop_first_9=drop_first_9)
 
     def init_estimated_params(self):
         """
@@ -1584,7 +1764,7 @@ class MarkovEstimation():
         """
         param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
         # param_bounds = {'alpha':(0,1), 'beta':(0,30), 'beta_mf':(0,30), 'beta_mb':(0, 30), 'lambda_parameter':(0,1), 'p_parameter':(-30,30), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
-        param_bounds = {'alpha':(0,1), 'beta':(0,5), 'beta_mf':(0,5), 'beta_mb':(0,5), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
+        param_bounds = {'alpha':(0,1), 'beta':(0,5), 'beta_mf':(0,5), 'beta_mb':(0,5), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,2), 'decay':(0.01,1.5), 'lf':(0.01,1), 'fixed_cost':(0,1)}
         param_zero_bounds = {'alpha':(0.5,0.5), 'beta':(2,2), 'beta_mf':(2,2), 'beta_mb':(2,2), 'lambda_parameter':(0.5,0.5), 'p_parameter':(.5,.5), 'temperature':(0.2,0.2), 'decay':(0.5,0.5), 'lf':(0.5,0.5), 'fixed_cost':(0,0)}
 
         if self.kind == 'markov-rl-mf':
@@ -1598,10 +1778,9 @@ class MarkovEstimation():
 
         elif self.kind == 'markov-ibl-mb':
             exclude = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'lf', 'fixed_cost'] # exclude latency parameter
-
+            exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
         elif self.kind == 'markov-ibl-hybrid':
             exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
-
         else:
             pass
 
@@ -1624,7 +1803,7 @@ class MarkovEstimation():
         #                    np.random.normal(0, 1),  # temperature
         #                    np.random.normal(0, 1)]  # decay
 
-    def init_data(self, subject_id, drop_first_9):
+    def init_data(self, subject_dir, subject_id, drop_first_9):
         """
         According to Decker et al. (2016) and Potter, Bryce et al. (2017)
         drop first 9 trials when estimate
@@ -1632,15 +1811,19 @@ class MarkovEstimation():
         :param drop_first_10:
         :return:
         """
+        if not subject_dir:
+            self.subject_dir = os.path.join(os.path.dirname(os.getcwd()), 'data', 'human', 'online_data')
+        else:
+            self.subject_dir = subject_dir
+
         if not subject_id:
             self.data = None
             return
         else:
             try:
-                subject_dir = os.path.join(os.path.dirname(os.getcwd()), 'data', 'human', 'online_data')
-                self.data = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
+                self.data = MarkovEstimation.load_subject_data(subject_dir=self.subject_dir, subject_id=subject_id)
             except:
-                print('Cannot find subject data...Check data path')
+                print('Cannot find subject data...Check data path', self.subject_dir)
 
         if drop_first_9:
             self.data = self.data.iloc[9:,]
@@ -1667,7 +1850,7 @@ class MarkovEstimation():
             return df
 
     @staticmethod
-    def load_opt_parameters(opt_dir, subject_id, estimate_model, only_maxLL=True):
+    def load_opt_parameters(opt_dir, subject_id, estimate_model, only_maxLL=True, verbose=False):
         """
         Load optimized parameter data
         :param opt_dir: os.path.join(main_dir, 'data', 'model', 'param_optimization')
@@ -1693,7 +1876,7 @@ class MarkovEstimation():
 
         f = os.path.join(opt_dir, 'sub%s-%s-opt-result.csv' % (subject_id, estimate_model))
         if not os.path.exists(f):
-            print('Cannot find file')
+            if verbose: print('Cannot find file')
             return
         df = pd.read_csv(f)
         if only_maxLL:
@@ -1702,6 +1885,43 @@ class MarkovEstimation():
             return d, params
         else:
             return df
+
+    @staticmethod
+    def load_optimization_data(opt_dir, estimate_models=None, long_format=False, only_maxLL=False):
+        """
+        load optimization data into df
+        :param opt_dir:
+        :param estimate_models:
+        :param only_maxLL:
+        :return: dataframe
+        """
+        if estimate_models is None:
+            estimate_models = ['markov-rl-mf',
+                               'markov-rl-mb',
+                               'markov-rl-hybrid',
+                               'markov-ibl-mb',
+                               'markov-ibl-hybrid']
+        ls = []
+        for i in np.arange(1, 152):
+            for estimate_model in estimate_models:
+                try:
+                    if only_maxLL:
+                        d, _ = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i),
+                                                                    estimate_model=estimate_model, only_maxLL=True)
+                        df = pd.Series(d)
+                    else:
+                        df = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i),
+                                                                  estimate_model=estimate_model, only_maxLL=False)
+                    ls.append(df)
+                except:
+                    print('Unable to find SUB - %s' % i)
+        if only_maxLL:
+            df = pd.DataFrame(ls)
+        else:
+            df = pd.concat(ls, axis=0)
+        if long_format:
+            df = df.melt(id_vars=['subject_id', 'estimate_model'], var_name='param_name', value_name='param_value')
+        return df
 
     @staticmethod
     def boltzmann(options, values, temperature):
@@ -1754,7 +1974,7 @@ class MarkovEstimation():
         """
         # create an estimation instance
         # define estimate model name and pass in data
-        # est = MarkovEstimation(data=df, model_name=estimate_model)
+        # est = MarkovEstimation(data=df, model_name=estimate_model)estimate_LL
         est = MarkovEstimation(subject_id=None, model_name=estimate_model, drop_first_9=drop_first_9, verbose=False)
         est.data = df
 
@@ -1763,7 +1983,7 @@ class MarkovEstimation():
         return res
 
     @staticmethod
-    def try_estimate(subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
+    def try_estimate(subject_dir=None, subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
         """
         Try to estimate maxLL of a subject with a specific model
         According to Decker 2016,
@@ -1772,12 +1992,12 @@ class MarkovEstimation():
             - applied following priors and bounds to parameters
             - randomly initialized parameter values
             - run 10 times
-        :param subject_dir:
+        :param subject_dir: if None, use default subject_dir
         :param subject_id:
         :param estimate_model:
         :return: a dataframe of all model MaxLL
         """
-        est = MarkovEstimation(model_name=estimate_model, subject_id=subject_id, verbose=verbose)
+        est = MarkovEstimation(subject_dir=subject_dir, model_name=estimate_model, subject_id=subject_id, verbose=verbose)
         res = MarkovEstimation.optimization_function(df=est.data, x0=est.param_inits, param_bounds=est.param_bounds)
 
         dfp = pd.DataFrame(
@@ -1930,11 +2150,13 @@ class MarkovPlot(Plot):
             MarkovPlot.plot_param_effect_rt_comb(df, model_name, param_name)
             return
         g = sns.FacetGrid(df, col=param_name, col_wrap=3)
-        g.map_dataframe(sns.pointplot, x=Plot.REWARD_FACTOR, y='response_time_mean',
-                        hue=Plot.TRANS_FACTOR, errorbar='se', dodge=True,
+        g.map_dataframe(sns.barplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
+                        errorbar='se',
                         palette=Plot.PALETTE,
-                        order=['reward', 'non-reward'],
-                        hue_order=['common', 'rare'])
+                        order=['common', 'rare'])
+        g.map_dataframe(sns.pointplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
+                        errorbar='sd', color='black',
+                        order=['common', 'rare'])
         g.add_legend()
         g.refline(y=1.09)
         g.tight_layout()
@@ -1943,20 +2165,28 @@ class MarkovPlot(Plot):
 
     @staticmethod
     def plot_param_effect_rt_comb(df, model_name, param_name):
-        ax, fig = plt.subplots(figsize=(18, 8))
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
         fig.suptitle('Summary: RT Effect of [%s] on [%s]' % (param_name, model_name))
-        ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
-                           x=Plot.REWARD_FACTOR, y='response_time_mean',
-                           hue=param_name, dodge=.1, se='se',
-                           palette='Blues',
-                           order=['reward', 'non-reward'])
-        ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'rare'],
-                           x=Plot.REWARD_FACTOR, y='response_time_mean',
-                           hue=param_name, dodge=.2,
-                           palette='Reds',
-                           order=['reward', 'non-reward'])
-        ax.axhline(1.09, color='grey', ls='-.', linewidth=.5)
+        ax = sns.pointplot(data=df, x=Plot.TRANS_FACTOR, y='response_time_mean',
+                           hue=param_name,
+                           palette='Greys',
+                           order=['common', 'rare'])
         plt.tight_layout()
+        # fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+        # fig.suptitle('Summary: RT Effect of [%s] on [%s]' % (param_name, model_name))
+        # ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
+        #                    x=Plot.REWARD_FACTOR, y='response_time_mean',
+        #                    hue=param_name, #dodge=.1, se='se',
+        #                    palette='Blues',
+        #                    order=['reward', 'non-reward'])
+        # ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'rare'],
+        #                    x=Plot.REWARD_FACTOR, y='response_time_mean',
+        #                    hue=param_name, #dodge=.2,
+        #                    palette='Reds',
+        #                    order=['reward', 'non-reward'])
+        # ax.axhline(1.09, color='grey', ls='-.', linewidth=.5)
+        # plt.tight_layout()
+
 
     @staticmethod
     def plot_response_switch(df, model_name, dep_var_suffix='', barplot=True):
@@ -1997,3 +2227,41 @@ class MarkovPlot(Plot):
         ax.set_ylim(0, 1.1)
         ax.legend().remove()
         plt.show()
+
+    @staticmethod
+    def parameter_lm_plot(df, x_name, y_name, exclude_parameters=None, alpha=.1):
+        if exclude_parameters:
+            df = df[~df['param_name'].isin(exclude_parameters)]
+        g = sns.lmplot(data=df, x=x_name, y=y_name,
+                       col="param_name", col_wrap=3, hue="param_name",
+                       height=3, aspect=1.2, palette='Set1',
+                       scatter_kws={'alpha': alpha},
+                       facet_kws=dict(sharex=False, sharey=False))
+        g.map_dataframe(MarkovPlot.annotate, x=x_name, y=y_name)
+        g.fig.subplots_adjust(top=.9)  # adjust the Figure in rp
+        g.fig.suptitle('Correlation of optimizated parmeters [%s] vs. [%s]: ' % (x_name, y_name))
+        plt.show()
+
+    @staticmethod
+    def annotate(data, **kws):
+        x, y = kws['x'], kws['y']
+        r, p = stats.pearsonr(data[x], data[y])
+        ax = plt.gca()
+        minx, miny, maxx, maxy = data[x].min(), data[y].min(), data[x].max(), data[y].max()
+        ax.text(0.05, 0.05, 'r = %.2f (p=%.2g, %s)' % (r, p, MarkovPlot.sig(p)), transform=ax.transAxes)
+        # ax.text(.05, 0.7, 'x: [%.2f - %.2f], y: [%.2f - %.2f]' % (min1, max1, min2, max2),
+        #         transform=ax.transAxes)
+
+    @staticmethod
+    def sig(p):
+        sig = ''
+        if p > .05:
+            sig = 'ns'
+        if p <= .05:
+            sig = '*'
+        if p < .01:
+            sig = '**'
+        if p < .001:
+            sig = '***'
+        return sig
+
