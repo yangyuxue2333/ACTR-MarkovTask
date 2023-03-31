@@ -944,6 +944,9 @@ class MarkovIBL(MarkovState):
         return p
 
     def evaluate_ibl_mb(self, response=None):
+        return self.evaluate_ibl_mb1(response=response)
+
+    def evaluate_ibl_mb1(self, response=None):
         """
         Implemented based on to Andrea's idea: use IBL to retrieve frequency, use RL-Q learning to evaluate Q
             q_mb = diff Q value of two s_
@@ -984,8 +987,63 @@ class MarkovIBL(MarkovState):
         self.markov_state._state1_p = p
         return a
 
+    def evaluate_ibl_mb2(self, response=None):
+        """
+        Implemented based on to memory sampling idea
+
+        :param response:
+        :return:
+        """
+        assert self.markov_state._curr_stage == '1'
+        # Q(MF)
+        if not response:
+            response = self.action_space[0]  # always eval left
+
+        q = self.q.copy()
+        b_value = max([q[('B', a)] for a in self.action_space])
+        c_value = max([q[('C', a)] for a in self.action_space])
+
+        # Determine the choice
+        # Sampling memory
+        estimated_freq = self.sampling_memory(response=response)
+        if COMMON_TRANS[response] == 'B':
+            q_mb = (2 * estimated_freq - 1) * (b_value - c_value)
+        else:
+            q_mb = (2 * estimated_freq - 1) * (c_value - b_value)
+
+        # scale by beta_mb
+        mb_value = self.beta_mb * q_mb
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == response else -1
+
+        # softmax choice rule
+        p = expit(mb_value + rep * self.p_parameter)
+
+        # decide action
+        if random.random() < p:
+            a = response
+        else:
+            a = MarkovIBL.return_alternative_item(self.action_space, response)
+
+        # save expected q value of mb = beta_mb * q_value
+        self.markov_state._mb_value = mb_value
+        self.markov_state._state1_p = p
+        return a
+
+    def sampling_memory(self, response, n=10):
+        samples = [self.memory.retrieve(rehearse=False, curr_state='A', response=response)['next_state'] for i in range(n)]
+        estimated_freq = np.round(samples.count('B')/n, 2)
+        return estimated_freq
 
     def evaluate_ibl_hybrid(self, response=None):
+        return self.evaluate_ibl_hybrid1(response=response)
+
+    def evaluate_ibl_hybrid1(self, response=None):
         """
         A combination of RL-MF + IBL-MB
         The potential problem of this model is, no matter what, it will go through MB evaluation process
@@ -1025,6 +1083,49 @@ class MarkovIBL(MarkovState):
         self.markov_state._hybrid_value = hybrid_value
         return a
 
+    def evaluate_ibl_hybrid2(self, response=None):
+        """
+        According to Daw 2011
+        Evaluate Q table using RL-Hybrid
+        >> best parameter combination
+            alpha=.5,
+            beta=5,
+            p_parameter=0,
+            lambda_parameter=.6
+            beta_mf
+            beta_mb
+        """
+        if not response:
+            response = self.action_space[0]  # always eval left
+
+        self.evaluate_rl_mf(response=response)
+        self.evaluate_ibl_mb(response=response)
+
+        # note: no need to x beta_mf since mf_value is already multiplied by beta_mf
+        hybrid_value = self.markov_state._mf_value + self.markov_state._mb_value
+
+        # rep(a)
+        try:
+            prev_choice = self.log[-1].state1_response
+        except:
+            prev_choice = random.choice(self.action_space)
+        rep = 1 if prev_choice == response else -1
+
+        # softmax choice rule
+        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
+
+        if random.random() < p:
+            a = response
+        else:
+            a = MarkovIBL.return_alternative_item(self.action_space, response)
+
+        # Q(Hybrid)
+        self.markov_state._state1_p = p
+        self.markov_state._hybrid_value = hybrid_value
+        return a
+
+
+
     def retrieve_response_from_state(self, s_):
         """
         Retrieve the response that mostly likely leads to next state s_
@@ -1036,6 +1137,8 @@ class MarkovIBL(MarkovState):
         retrieved_response = retrieved_memory['response']
         self.memory.advance()
         return retrieved_response
+
+
 
     # =================================================== #
     # CHOOSE STATE1
@@ -1487,7 +1590,7 @@ class MarkovSimulation():
     GROUP_VAR = ['pre_received_reward', 'pre_state_frequency']
 
     @staticmethod
-    def run_single_simulation(model='markov-ibl-mb', n=200, verbose=False, **params):
+    def run_single_simulation(model='markov-ibl-mb', n=201, verbose=False, **params):
 
         m = MarkovIBL(model=model, verbose=verbose)
         m.update_parameters(**params)
@@ -1496,7 +1599,7 @@ class MarkovSimulation():
         return m
 
     @staticmethod
-    def run_simulations(model='markov-ibl-mb', e=1, n=200, verbose=False, **params):
+    def run_simulations(model='markov-ibl-mb', e=1, n=201, verbose=False, **params):
         df_list = []
         for i in tqdm(range(e)):
             m = MarkovIBL(model=model, verbose=False)
@@ -1543,9 +1646,9 @@ class MarkovSimulation():
         est = MarkovEstimation(model_name=model_name)
         # params =  dict(zip(est.param_names, est.param_inits))
         params = {'alpha': 0.2,
-                  'beta': 5,
-                  'beta_mf': 5,
-                  'beta_mb': 5,
+                  'beta': 2,
+                  'beta_mf': 2,
+                  'beta_mb': 2,
                   'lambda_parameter': .5,
                   'p_parameter': 0,
                   'temperature': 0.2,
@@ -1574,14 +1677,84 @@ class MarkovSimulation():
                 return dff
         return dff
 
+    @staticmethod
+    def simulate_param_recovery(pr_dir, verbose=False):
+        """
+        Run parameter recovery anlaysis
+        :param df_opt:
+        :param des_dir:
+        :return:
+        """
+        # define subject and models
+        subject_ids = [str(i) for i in np.arange(1, 152)]
+        estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
+
+        d1 = os.path.join(pr_dir, 'opt_original')
+        d2 = os.path.join(pr_dir, 'fake_subject')
+        d3 = os.path.join(pr_dir, 'opt_recovered')
+
+        if not os.path.exists(d1):
+            print('CREATE DIR...')
+            os.makedirs(d1, exist_ok=True)
+            os.makedirs(d2, exist_ok=True)
+            os.makedirs(d3, exist_ok=True)
+
+        # start run original optimization
+        if len(os.listdir(d1)) < len(subject_ids)*len(estimate_models):
+            if verbose: print('START OPT ORI...')
+
+            # start optimization
+            for i in tqdm(range(len(subject_ids))):
+                subject_id = subject_ids[i]
+                for estimate_model in estimate_models:
+                        MarkovEstimation.try_estimate(subject_dir=None, # default
+                                                      subject_id=subject_id,
+                                                      estimate_model=estimate_model,
+                                                      save_output=d1,
+                                                      verbose=verbose)
+
+        # start run single simulation
+        if len(os.listdir(d2)) < len(subject_ids):
+            if verbose: print('START SINGLE RUN SIMULATION...')
+            df_opt = MarkovEstimation.load_optimization_data(opt_dir=d1, estimate_models=['markov-ibl-hybrid'])
+            for i, row in df_opt.iterrows():
+                d = dict(row)
+                estimate_model = d['estimate_model']
+                subject_id = d['subject_id']
+                params = {key: d[key] for key in PARAMETER_NAMES}
+
+                # run single simulation
+                m = MarkovSimulation.run_single_simulation(model=estimate_model, verbose=False, **params)
+                df_fake = m.df_behaviors()
+                df_fake['subject_id']='sub%d' % subject_id
+
+                # save data
+                os.makedirs(os.path.join(d2, 'sub%d' % (subject_id)), exist_ok=True)
+                df_fake.to_csv(os.path.join(d2, 'sub%d' % (subject_id), 'test.csv'))
+
+        # start run recovered optimization
+        if len(os.listdir(d3)) < len(subject_ids)*len(estimate_models):
+            if verbose: print('START OPT REC...')
+
+            # start optimization
+            for i in tqdm(range(len(subject_ids))):
+                subject_id = subject_ids[i]
+                for estimate_model in estimate_models:
+                    MarkovEstimation.try_estimate(subject_dir=d2,
+                                                  subject_id=subject_id,
+                                                  estimate_model=estimate_model,
+                                                  save_output=d3,
+                                                  verbose=verbose)
+
+
 class MarkovEstimation():
-    def __init__(self, model_name='markov-rl-mf', subject_id=None, drop_first_9=False, verbose=False):
+    def __init__(self, model_name='markov-rl-mf', subject_dir=None, subject_id=None, drop_first_9=False, verbose=False):
         self.kind = model_name
         self.verbose = verbose
 
         # init parameter bounds, init values and load subject data
         self.init_estimated_params()
-        self.init_data(subject_id=subject_id, drop_first_9=drop_first_9)
+        self.init_data(subject_dir=subject_dir, subject_id=subject_id, drop_first_9=drop_first_9)
 
     def init_estimated_params(self):
         """
@@ -1591,7 +1764,7 @@ class MarkovEstimation():
         """
         param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
         # param_bounds = {'alpha':(0,1), 'beta':(0,30), 'beta_mf':(0,30), 'beta_mb':(0, 30), 'lambda_parameter':(0,1), 'p_parameter':(-30,30), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
-        param_bounds = {'alpha':(0,1), 'beta':(0,5), 'beta_mf':(0,5), 'beta_mb':(0,5), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
+        param_bounds = {'alpha':(0,1), 'beta':(0,5), 'beta_mf':(0,5), 'beta_mb':(0,5), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,2), 'decay':(0.01,1.5), 'lf':(0.01,1), 'fixed_cost':(0,1)}
         param_zero_bounds = {'alpha':(0.5,0.5), 'beta':(2,2), 'beta_mf':(2,2), 'beta_mb':(2,2), 'lambda_parameter':(0.5,0.5), 'p_parameter':(.5,.5), 'temperature':(0.2,0.2), 'decay':(0.5,0.5), 'lf':(0.5,0.5), 'fixed_cost':(0,0)}
 
         if self.kind == 'markov-rl-mf':
@@ -1605,10 +1778,9 @@ class MarkovEstimation():
 
         elif self.kind == 'markov-ibl-mb':
             exclude = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'lf', 'fixed_cost'] # exclude latency parameter
-
+            exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
         elif self.kind == 'markov-ibl-hybrid':
             exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
-
         else:
             pass
 
@@ -1631,7 +1803,7 @@ class MarkovEstimation():
         #                    np.random.normal(0, 1),  # temperature
         #                    np.random.normal(0, 1)]  # decay
 
-    def init_data(self, subject_id, drop_first_9):
+    def init_data(self, subject_dir, subject_id, drop_first_9):
         """
         According to Decker et al. (2016) and Potter, Bryce et al. (2017)
         drop first 9 trials when estimate
@@ -1639,15 +1811,19 @@ class MarkovEstimation():
         :param drop_first_10:
         :return:
         """
+        if not subject_dir:
+            self.subject_dir = os.path.join(os.path.dirname(os.getcwd()), 'data', 'human', 'online_data')
+        else:
+            self.subject_dir = subject_dir
+
         if not subject_id:
             self.data = None
             return
         else:
             try:
-                subject_dir = os.path.join(os.path.dirname(os.getcwd()), 'data', 'human', 'online_data')
-                self.data = MarkovEstimation.load_subject_data(subject_dir=subject_dir, subject_id=subject_id)
+                self.data = MarkovEstimation.load_subject_data(subject_dir=self.subject_dir, subject_id=subject_id)
             except:
-                print('Cannot find subject data...Check data path')
+                print('Cannot find subject data...Check data path', self.subject_dir)
 
         if drop_first_9:
             self.data = self.data.iloc[9:,]
@@ -1674,7 +1850,7 @@ class MarkovEstimation():
             return df
 
     @staticmethod
-    def load_opt_parameters(opt_dir, subject_id, estimate_model, only_maxLL=True):
+    def load_opt_parameters(opt_dir, subject_id, estimate_model, only_maxLL=True, verbose=False):
         """
         Load optimized parameter data
         :param opt_dir: os.path.join(main_dir, 'data', 'model', 'param_optimization')
@@ -1700,7 +1876,7 @@ class MarkovEstimation():
 
         f = os.path.join(opt_dir, 'sub%s-%s-opt-result.csv' % (subject_id, estimate_model))
         if not os.path.exists(f):
-            print('Cannot find file')
+            if verbose: print('Cannot find file')
             return
         df = pd.read_csv(f)
         if only_maxLL:
@@ -1709,6 +1885,43 @@ class MarkovEstimation():
             return d, params
         else:
             return df
+
+    @staticmethod
+    def load_optimization_data(opt_dir, estimate_models=None, long_format=False, only_maxLL=False):
+        """
+        load optimization data into df
+        :param opt_dir:
+        :param estimate_models:
+        :param only_maxLL:
+        :return: dataframe
+        """
+        if estimate_models is None:
+            estimate_models = ['markov-rl-mf',
+                               'markov-rl-mb',
+                               'markov-rl-hybrid',
+                               'markov-ibl-mb',
+                               'markov-ibl-hybrid']
+        ls = []
+        for i in np.arange(1, 152):
+            for estimate_model in estimate_models:
+                try:
+                    if only_maxLL:
+                        d, _ = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i),
+                                                                    estimate_model=estimate_model, only_maxLL=True)
+                        df = pd.Series(d)
+                    else:
+                        df = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i),
+                                                                  estimate_model=estimate_model, only_maxLL=False)
+                    ls.append(df)
+                except:
+                    print('Unable to find SUB - %s' % i)
+        if only_maxLL:
+            df = pd.DataFrame(ls)
+        else:
+            df = pd.concat(ls, axis=0)
+        if long_format:
+            df = df.melt(id_vars=['subject_id', 'estimate_model'], var_name='param_name', value_name='param_value')
+        return df
 
     @staticmethod
     def boltzmann(options, values, temperature):
@@ -1761,7 +1974,7 @@ class MarkovEstimation():
         """
         # create an estimation instance
         # define estimate model name and pass in data
-        # est = MarkovEstimation(data=df, model_name=estimate_model)
+        # est = MarkovEstimation(data=df, model_name=estimate_model)estimate_LL
         est = MarkovEstimation(subject_id=None, model_name=estimate_model, drop_first_9=drop_first_9, verbose=False)
         est.data = df
 
@@ -1770,7 +1983,7 @@ class MarkovEstimation():
         return res
 
     @staticmethod
-    def try_estimate(subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
+    def try_estimate(subject_dir=None, subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
         """
         Try to estimate maxLL of a subject with a specific model
         According to Decker 2016,
@@ -1779,12 +1992,12 @@ class MarkovEstimation():
             - applied following priors and bounds to parameters
             - randomly initialized parameter values
             - run 10 times
-        :param subject_dir:
+        :param subject_dir: if None, use default subject_dir
         :param subject_id:
         :param estimate_model:
         :return: a dataframe of all model MaxLL
         """
-        est = MarkovEstimation(model_name=estimate_model, subject_id=subject_id, verbose=verbose)
+        est = MarkovEstimation(subject_dir=subject_dir, model_name=estimate_model, subject_id=subject_id, verbose=verbose)
         res = MarkovEstimation.optimization_function(df=est.data, x0=est.param_inits, param_bounds=est.param_bounds)
 
         dfp = pd.DataFrame(
@@ -1830,8 +2043,7 @@ class MarkovEstimation():
         return LL
 
     @staticmethod
-    def calculate_LL(df_model, df_subject,
-                     factor_cols=['pre_received_reward', 'pre_state_frequency'],
+    def calculate_LL(df_model, df_subject, factor_cols=['pre_received_reward', 'pre_state_frequency'],
                      dv_name='state1_stay', return_numeric=True):
         """
         Calcualte LL of PSWitch
@@ -1857,7 +2069,7 @@ class MarkovEstimation():
         return df_merge
 
     @staticmethod
-    def try_estimate_grid_search(dest_dir, model_name='markov-rl-hybrid', param_id = 0, verbose=False, overwrite=False):
+    def try_estimate_grid_search(dest_dir, model_name='markov-rl-hybrid', verbose=False):
         """
         Grid search optimization
         :param dest_dir:
@@ -1865,26 +2077,31 @@ class MarkovEstimation():
         :param verbose:
         :return:
         """
-        p_log = os.path.join(dest_dir, '%s-param-log.csv' % (model_name))
-        dfp = pd.read_csv(p_log)
 
-        dest_f = os.path.join(dest_dir, '%s-param_id%05d-sim.csv' % (model_name, param_id))
+        dest_dir = os.path.join(dest_dir, model_name)
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir, exist_ok=True)
+            if verbose: print('...CREATE ', dest_dir)
 
-        if not os.path.exists(dest_f) or overwrite:
-            d = dfp.iloc[param_id,:].to_dict()
-            params = {key: d[key] for key in d.keys() if key not in ['model_name', 'param_id']}
+        est = MarkovEstimation(model_name=model_name)
+
+        # prepare param log
+        dfp = pd.DataFrame(est.param_gs_ls)
+        dfp['model_name'] = est.kind
+        dfp['param_id'] = ['param_id%05d'% i for i in dfp.index]
+        dfp.to_csv(os.path.join(dest_dir, '%s-param-log.csv' %(model_name)), index=False)
+
+        # start grid search simulation
+        param_id = 0
+        for params in est.param_gs_ls:
             df = MarkovSimulation.run_simulations(model=model_name, e=100, verbose=verbose, **params)
-            df['param_id'] = d['param_id']
-            df['model_name'] = d['model_name']
+            df['param_id'] = param_id
+            df['model_name'] = est.kind
 
-            try:
-                df.to_csv(dest_f, index=False)
-                if verbose: print('...SAVE [%s] [%d]' % (model_name, param_id))
-            except:
-                pass
-        else:
-            if verbose: print('...Skip [%d]' % (param_id))
-        param_id += 1
+            dest_f = os.path.join(dest_dir, '%s-param_id%05d-sim.csv' % (model_name, param_id))
+            df.to_csv(dest_f, index=False)
+            param_id += 1
+            if verbose: print('...SAVE [%s] [%d]' % (est.kind, param_id))
 
 class MarkovPlot(Plot):
     """
@@ -1933,11 +2150,13 @@ class MarkovPlot(Plot):
             MarkovPlot.plot_param_effect_rt_comb(df, model_name, param_name)
             return
         g = sns.FacetGrid(df, col=param_name, col_wrap=3)
-        g.map_dataframe(sns.pointplot, x=Plot.REWARD_FACTOR, y='response_time_mean',
-                        hue=Plot.TRANS_FACTOR, errorbar='se', dodge=True,
+        g.map_dataframe(sns.barplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
+                        errorbar='se',
                         palette=Plot.PALETTE,
-                        order=['reward', 'non-reward'],
-                        hue_order=['common', 'rare'])
+                        order=['common', 'rare'])
+        g.map_dataframe(sns.pointplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
+                        errorbar='sd', color='black',
+                        order=['common', 'rare'])
         g.add_legend()
         g.refline(y=1.09)
         g.tight_layout()
@@ -1946,20 +2165,28 @@ class MarkovPlot(Plot):
 
     @staticmethod
     def plot_param_effect_rt_comb(df, model_name, param_name):
-        ax, fig = plt.subplots(figsize=(18, 8))
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
         fig.suptitle('Summary: RT Effect of [%s] on [%s]' % (param_name, model_name))
-        ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
-                           x=Plot.REWARD_FACTOR, y='response_time_mean',
-                           hue=param_name, dodge=.1, se='se',
-                           palette='Blues',
-                           order=['reward', 'non-reward'])
-        ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'rare'],
-                           x=Plot.REWARD_FACTOR, y='response_time_mean',
-                           hue=param_name, dodge=.2,
-                           palette='Reds',
-                           order=['reward', 'non-reward'])
-        ax.axhline(1.09, color='grey', ls='-.', linewidth=.5)
+        ax = sns.pointplot(data=df, x=Plot.TRANS_FACTOR, y='response_time_mean',
+                           hue=param_name,
+                           palette='Greys',
+                           order=['common', 'rare'])
         plt.tight_layout()
+        # fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+        # fig.suptitle('Summary: RT Effect of [%s] on [%s]' % (param_name, model_name))
+        # ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
+        #                    x=Plot.REWARD_FACTOR, y='response_time_mean',
+        #                    hue=param_name, #dodge=.1, se='se',
+        #                    palette='Blues',
+        #                    order=['reward', 'non-reward'])
+        # ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'rare'],
+        #                    x=Plot.REWARD_FACTOR, y='response_time_mean',
+        #                    hue=param_name, #dodge=.2,
+        #                    palette='Reds',
+        #                    order=['reward', 'non-reward'])
+        # ax.axhline(1.09, color='grey', ls='-.', linewidth=.5)
+        # plt.tight_layout()
+
 
     @staticmethod
     def plot_response_switch(df, model_name, dep_var_suffix='', barplot=True):
@@ -2001,294 +2228,40 @@ class MarkovPlot(Plot):
         ax.legend().remove()
         plt.show()
 
-
-class MarkovMaxLogLikelihood(MaxLogLikelihood):
+    @staticmethod
+    def parameter_lm_plot(df, x_name, y_name, exclude_parameters=None, alpha=.1):
+        if exclude_parameters:
+            df = df[~df['param_name'].isin(exclude_parameters)]
+        g = sns.lmplot(data=df, x=x_name, y=y_name,
+                       col="param_name", col_wrap=3, hue="param_name",
+                       height=3, aspect=1.2, palette='Set1',
+                       scatter_kws={'alpha': alpha},
+                       facet_kws=dict(sharex=False, sharey=False))
+        g.map_dataframe(MarkovPlot.annotate, x=x_name, y=y_name)
+        g.fig.subplots_adjust(top=.9)  # adjust the Figure in rp
+        g.fig.suptitle('Correlation of optimizated parmeters [%s] vs. [%s]: ' % (x_name, y_name))
+        plt.show()
 
     @staticmethod
-    def process_subject_data_online(main_dir, raw_subject_dir, new_subject_dir, subject_id='sub1', overwrite=False,
-                                    verbose=True):
-        """
-        raw_subject_dir = 'data/human/online_csvs'
-        new_subject_dir = 'data/human/subject_data'
-        subject_id = 'sub1'
-        """
-        subject_ids = np.sort(
-            [f.split('_')[-1].split('.')[0] for f in os.listdir(os.path.join(main_dir, raw_subject_dir)) if
-             f.endswith('.csv')])
-        for subject_id in subject_ids:
-            try:
-                # read raw subject data
-                df = pd.read_csv(os.path.join(main_dir, raw_subject_dir, 'mbmf_%s.csv' % (subject_id))).dropna(
-                    subset=['trial_stage'], axis=0)
-                # select useful columns
-                # choice=1 (key 49) choice=2(key 48), otherwise na
-                usecols = ['subject_id', 'trial_index', 'practice_trial', 'reward', 'transition', 'transition_type',
-                           'choice', 'trial_stage', 'rt']
-
-                # process practice data
-                df_practice = df[df['practice_trial'] == 'practice'][usecols].sort_values(by='trial_index')
-
-                df_practice1 = df_practice[df_practice['trial_stage'] == '1'][
-                    ['subject_id', 'trial_index', 'choice', 'rt']]
-                df_practice1['index'] = np.arange(len(df_practice1))
-                df_practice1 = df_practice1.rename(
-                    columns={'choice': 'state1_response', 'rt': 'state1_response_time'}).drop(columns=['trial_index'])
-
-                df_practice2 = df_practice[df_practice['trial_stage'] == '2'][
-                    ['subject_id', 'trial_index', 'transition', 'reward', 'choice', 'rt']]
-                df_practice2['index'] = np.arange(len(df_practice2))
-                df_practice2 = df_practice2.rename(
-                    columns={'choice': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
-                             'transition': 'state_frequency'}).drop(columns=['trial_index'])
-
-                # unstack df to wide format
-                df_practice_wide = pd.merge(df_practice1, df_practice2, on=['subject_id', 'index'])
-                df_practice_wide['pre_received_reward'] = df_practice_wide['received_reward'].shift()
-                df_practice_wide['pre_state_frequency'] = df_practice_wide['state_frequency'].shift()
-                df_practice_wide['pre_state1_response'] = df_practice_wide['state1_response'].shift()
-                df_practice_wide['state1_stay'] = df_practice_wide.apply(
-                    lambda x: 1 if x['pre_state1_response'] == x['state1_response'] else 0, axis=1)
-                df_practice_wide = df_practice_wide.dropna(axis=0)
-                df_practice_wide['pre_received_reward'] = df_practice_wide.apply(
-                    lambda x: 'reward' if int(x['pre_received_reward']) == 1 else 'non-reward', axis=1)
-
-                # process test data
-                df_test = df[df['practice_trial'] == 'real'][usecols].sort_values(by='trial_index')
-                df_test1 = df_test[df_test['trial_stage'] == '1'][['subject_id', 'trial_index', 'choice', 'rt']]
-                df_test1['index'] = np.arange(len(df_test1))
-                df_test1 = df_test1.rename(columns={'choice': 'state1_response', 'rt': 'state1_response_time'}).drop(
-                    columns=['trial_index'])
-
-                df_test2 = df_test[df_test['trial_stage'] == '2'][
-                    ['subject_id', 'trial_index', 'transition', 'reward', 'choice', 'rt']]
-                df_test2['index'] = np.arange(len(df_test2))
-                df_test2 = df_test2.rename(
-                    columns={'choice': 'state2_response', 'rt': 'state2_response_time', 'reward': 'received_reward',
-                             'transition': 'state_frequency'}).drop(columns=['trial_index'])
-
-                # unstack data to wide format
-                df_test_wide = pd.merge(df_test1, df_test2, on=['subject_id', 'index'])
-                df_test_wide['pre_received_reward'] = df_test_wide['received_reward'].shift()
-                df_test_wide['pre_state_frequency'] = df_test_wide['state_frequency'].shift()
-                df_test_wide['pre_state1_response'] = df_test_wide['state1_response'].shift()
-                df_test_wide['state1_stay'] = df_test_wide.apply(
-                    lambda x: 1 if x['pre_state1_response'] == x['state1_response'] else 0, axis=1)
-                df_test_wide = df_test_wide.dropna(axis=0)
-                df_test_wide['pre_received_reward'] = df_test_wide.apply(
-                    lambda x: 'reward' if int(x['pre_received_reward']) == 1 else 'non-reward', axis=1)
-
-                # reorder columns
-                col_order = ['subject_id', 'index', 'state_frequency', 'received_reward',
-                             'pre_received_reward', 'pre_state_frequency',
-                             'state1_response', 'state2_response', 'state1_stay', 'state1_response_time',
-                             'state2_response_time']
-                df_practice_wide = df_practice_wide[col_order]
-                df_test_wide = df_test_wide[col_order]
-
-                dest_dir = os.path.join(main_dir, new_subject_dir, subject_id)
-                if (not os.path.exists(os.path.join(dest_dir, 'test.csv'))) or overwrite:
-                    df_practice_wide.to_csv(os.path.join(dest_dir, 'prac.csv'))
-                    df_test_wide.to_csv(os.path.join(dest_dir, 'test.csv'))
-                    if verbose: print('...PROCESS SUBJECT DATA [%s]' % (subject_id))
-                else:
-                    if verbose: print('...SKIP SUBJECT DATA [%s]' % (subject_id))
-            except:
-                print('error...', subject_id)
-                continue
+    def annotate(data, **kws):
+        x, y = kws['x'], kws['y']
+        r, p = stats.pearsonr(data[x], data[y])
+        ax = plt.gca()
+        minx, miny, maxx, maxy = data[x].min(), data[y].min(), data[x].max(), data[y].max()
+        ax.text(0.05, 0.05, 'r = %.2f (p=%.2g, %s)' % (r, p, MarkovPlot.sig(p)), transform=ax.transAxes)
+        # ax.text(.05, 0.7, 'x: [%.2f - %.2f], y: [%.2f - %.2f]' % (min1, max1, min2, max2),
+        #         transform=ax.transAxes)
 
     @staticmethod
-    def save_agg_subject_data(main_dir, subject_dir, overwrite=True, verbose=True):
-        subject_ids = ['sub' + str(i) for i in np.arange(1, 152)]
-        for subject_id in subject_ids:
-            for trial_type in ['prac', 'test']:
-                try:
-                    f = os.path.join(main_dir, subject_dir, subject_id, trial_type + '.csv')
-                    df_subject = pd.read_csv(f, index_col=0)
-                    df_subject_agg = MarkovMaxLogLikelihood.calculate_agg_data(df=df_subject, data_id=subject_id)
-
-                    dest_dir = os.path.join(main_dir, subject_dir, subject_id, 'aggregate')
-
-                    if (not os.path.exists(dest_dir)) or overwrite:
-                        if not os.path.exists(dest_dir):
-                            os.mkdir(dest_dir)
-                        df_subject_agg.to_csv(os.path.join(dest_dir, trial_type + '-agg.csv'), header=True, index=False)
-                        if verbose: print('\tSAVING SUBJECT AGG FILE...ID [%s]' % (subject_id))
-                    else:
-                        if verbose: print('\tSKIP SUBJECT ID [%s]' % (subject_id))
-                except:
-                    print('\tERROR SUBJECT ID [%s]' % (subject_id))
-                    continue
-
-    @staticmethod
-    def calculate_agg_data_standard(df, data_id):
-        """
-        """
-        df = df.astype({'pre_state_frequency': CategoricalDtype(categories=['rare', 'common'], ordered=True),
-                        'pre_received_reward': CategoricalDtype(categories=['non-reward', 'reward'], ordered=True)})
-
-        group_var = MaxLogLikelihood.MAXLL_FACTOR_VAR
-        dep_dict = {var: ('mean', 'std', 'sem') for var in MaxLogLikelihood.MAXLL_DEP_VAR}
-        df_agg = df.groupby(group_var).agg(dep_dict).reset_index().fillna(0.0)
-        df_agg['data_id'] = data_id
-
-        # flatten columns
-        df_agg.columns = ['%s%s' % (a, '_%s' % b if b else '') for a, b in df_agg.columns]
-        return df_agg
-
-    @staticmethod
-    def calculate_agg_data(df, data_id):
-        if len(df) !=4:
-            df = MarkovMaxLogLikelihood.calculate_agg_data_standard(df, data_id=data_id)
-        df1 = pd.concat([df.groupby(['pre_received_reward']).agg(
-            state1_stay_mean=('state1_stay_mean', 'mean')).reset_index().rename(
-            columns={'pre_received_reward': 'group_var'}),
-                         df.groupby(['pre_state_frequency']).agg(
-                             state1_stay_mean=('state1_stay_mean', 'mean')).reset_index().rename(
-                             columns={'pre_state_frequency': 'group_var'})], axis=0)
-
-        df2 = pd.DataFrame({
-            'group_var': ['C-R|NR', 'C-R|R', 'R-NR|C', 'R-NR|R'],
-            'state1_stay_mean': [df.loc[0, 'state1_stay_mean'] - df.loc[1, 'state1_stay_mean'],
-                                 df.loc[2, 'state1_stay_mean'] - df.loc[3, 'state1_stay_mean'],
-                                 df.loc[2, 'state1_stay_mean'] - df.loc[0, 'state1_stay_mean'],
-                                 df.loc[3, 'state1_stay_mean'] - df.loc[1, 'state1_stay_mean']]})
-
-        df_agg = pd.concat([df1, df2], axis=0).reset_index().drop(columns=['index'])
-        df_agg['data_id'] = data_id
-        df_agg = df_agg.astype({'group_var': CategoricalDtype(categories=['reward', 'non-reward','common', 'rare',
-                                                                              'C-R|NR', 'C-R|R', 'R-NR|C', 'R-NR|R'], ordered=True)})
-        return df_agg
-
-    @staticmethod
-    def calcualte_agg_model_data(df, data_id):
-        df_list = []
-        for e in df['epoch'].unique():
-            dfe = df[df['epoch']==e]
-            df_list.append(MarkovMaxLogLikelihood.calculate_agg_data(dfe, data_id=data_id))
-        dff = pd.concat(df_list, axis=0)
-        dff.groupby(['group_var']).agg(state1_stay_mean=('state1_stay_mean', 'mean'),
-                                       state1_stay_std=('state1_stay_mean', 'std')).reset_index()
-        dff['data_id'] = data_id
-        return dff
-
-
-
-    @staticmethod
-    def save_agg_model_data(main_dir, model_dir, verbose=True, overwrite=False):
-        dfp = pd.read_csv(glob.glob(os.path.join(main_dir, model_dir, '*-log.csv'))[0])
-        for param_id in dfp['param_id'].tolist():
-            try:
-                f = glob.glob(os.path.join(main_dir, model_dir, '*%s*' % param_id))[0]
-                df_model = pd.read_csv(f)
-                df_model = df_model.rename({'state1_stay_mean': 'state1_stay',
-                                            'state1_response_time_mean': 'state1_response_time',
-                                            'state2_response_time_mean': 'state2_response_time'}, axis=1)
-                df_model_agg = MarkovMaxLogLikelihood.calculate_agg_data(df=df_model, data_id=param_id)
-
-                # save agg model data
-                dest_dir = os.path.join(main_dir, model_dir, 'aggregate')
-                dest_f = f.split('/')[-1].replace("-sim", "-agg")
-                # check exists
-                if (not os.path.exists(dest_f)) or overwrite:
-                    if not os.path.exists(dest_dir):
-                        os.mkdir(dest_dir)
-                    df_model_agg.to_csv(os.path.join(dest_dir, dest_f), header=True, index=False)
-                    if verbose: print('\tSAVING MODEL AGG FILE...ID[%s]' % (param_id))
-            except:
-                print('\tERROR PARAM ID [%s]' % (param_id))
-                continue
-
-    @staticmethod
-    def load_model_agg_data(main_dir, model_dir):
-        """
-        load model agg data for all param_id and concat to one single df
-        """
-        model_agg_files = glob.glob(os.path.join(main_dir, model_dir, 'aggregate', '*-agg.csv'))
-        model_agg = pd.concat([pd.read_csv(f).convert_dtypes() for f in model_agg_files], axis=0)
-        model_agg['model_name'] = model_dir.split('/')[-1]
-        return model_agg
-
-    @staticmethod
-    def calculate_maxLL(df_LL, main_dir, model_dir):
-        assert ('LL' in df_LL.columns)
-        maxLL = df_LL['LL'].max()
-        df_maxLL = df_LL[df_LL['LL'] == maxLL]
-        return df_maxLL
-
-    @staticmethod
-    def save_maxLL_data(df, main_dir, subject_dir, special_suffix='', overwrite=False, verbose=True):
-        """
-        Save LL data
-        """
-        assert (len(df['model_name'].unique()) == 1 and len(df['data_id.s'].unique()) == 1)
-
-        df = df.reset_index().drop(columns=['index'])
-        # define destination dir
-        model_name = df['model_name'].unique()[0]
-        subject_id = df['data_id.s'].unique()[0]
-
-        dest_dir = os.path.join(main_dir, subject_dir, subject_id, 'maxll')
-        dest_file_name = subject_id + '-' + model_name + special_suffix + '.csv'
-        if (not os.path.exists(os.path.join(dest_dir, dest_file_name))) or overwrite:
-            if not os.path.exists(dest_dir):
-                os.mkdir(dest_dir)
-            df.to_csv(os.path.join(dest_dir, dest_file_name), index=False)
-
-        return df
-
-    @staticmethod
-    def run_maxLL_pipline(main_dir, model_dir, raw_subject_dir, model_name, new_subject_dir: 'str', overwrite=False,
-                          verbose=True):
-        """
-        This function integrates all necessary steps to estimate maxLL
-        """
-
-        # step 0: pre-process subject data to match our model data structure
-        MarkovMaxLogLikelihood.process_subject_data_online(main_dir=main_dir,
-                                                     raw_subject_dir=raw_subject_dir,
-                                                     new_subject_dir=new_subject_dir,
-                                                     overwrite=overwrite,
-                                                     verbose=verbose)
-
-        # step 1: post-process subject data: aggregate by group variable
-        MarkovMaxLogLikelihood.save_agg_subject_data(main_dir=main_dir,
-                                               subject_dir=new_subject_dir,
-                                               overwrite=overwrite,
-                                               verbose=verbose)
-
-        # step 2: post-process model data: aggregate by group variable
-        MarkovMaxLogLikelihood.save_agg_model_data(main_dir=main_dir,
-                                             model_dir=model_dir,
-                                             overwrite=overwrite,
-                                             verbose=verbose)
-
-        # step 3: iterate subject data
-        subject_ids = os.listdir(os.path.join(main_dir, new_subject_dir))
-        for subject_id in subject_ids:
-            for subject_data_type in ['prac', 'test']:
-                subject_file = os.path.join(main_dir, new_subject_dir, subject_id, 'aggregate',
-                                            subject_data_type + '-agg.csv')
-                subject_agg = pd.read_csv(subject_file).convert_dtypes()
-
-                # step 4: load model agg data for all param_id
-                model_agg = MarkovMaxLogLikelihood.load_model_agg_data(main_dir=main_dir, model_dir=model_dir,
-                                                                 model_name=model_name)
-
-                # calcualte LL maxLL data
-                df_LL = MarkovMaxLogLikelihood.calculate_LL(subject_agg, model_agg, model_name=model_name)
-                df_maxLL = MarkovMaxLogLikelihood.calculate_maxLL(df_LL, main_dir=main_dir, model_dir=model_dir)
-
-                # save LL maxLL data
-                MarkovMaxLogLikelihood.save_maxLL_data(df_maxLL, main_dir=main_dir,
-                                                 subject_dir=new_subject_dir,
-                                                 special_suffix='-maxll',
-                                                 overwrite=overwrite,
-                                                 verbose=verbose)
-                MarkovMaxLogLikelihood.save_maxLL_data(df_LL,
-                                                 main_dir=main_dir,
-                                                 subject_dir=new_subject_dir,
-                                                 special_suffix='-ll',
-                                                 overwrite=False,
-                                                 verbose=verbose)
-
+    def sig(p):
+        sig = ''
+        if p > .05:
+            sig = 'ns'
+        if p <= .05:
+            sig = '*'
+        if p < .01:
+            sig = '**'
+        if p < .001:
+            sig = '***'
+        return sig
 
