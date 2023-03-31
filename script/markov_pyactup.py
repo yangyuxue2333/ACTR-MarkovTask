@@ -1686,7 +1686,7 @@ class MarkovSimulation():
         :return:
         """
         # define subject and models
-        subject_ids = [str(i) for i in np.arange(1, 152)][:2]
+        subject_ids = [str(i) for i in np.arange(1, 152)]
         estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
 
         d1 = os.path.join(pr_dir, 'opt_original')
