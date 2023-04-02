@@ -36,6 +36,8 @@ from pandas import CategoricalDtype
 import pprint
 from scipy.special import expit
 import scipy.optimize as opt
+from scipy.stats import gamma, norm
+from scipy.stats import beta as beta_dist
 from tqdm.auto import tqdm
 import glob
 from scipy.stats import norm
@@ -54,6 +56,7 @@ RESPONSE_CODE = {'f': 'L', 'k': 'R'}
 RANDOM_TABLE = None
 RANDOM_NOISE_TABLE = None
 REWARD_DICT = {'B1': (1,-1), 'B2': (1,-1), 'C1': (1,-1), 'C2': (1,-1)}
+
 # Common transitions
 COMMON_TRANS = {
     'f': 'B', # f to B state is common
@@ -61,11 +64,11 @@ COMMON_TRANS = {
 }
 
 # parameter names
-RL_PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter']
-IBL_PARAMETER_NAMES = ['temperature', 'decay', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter']
+RL_PARAMETER_NAMES = ['alpha', 'beta', 'lambda_parameter', 'p_parameter']
+IBL_PARAMETER_NAMES = ['temperature', 'decay']
 RT_PARAMETER_NAMES = ['lf', 'fixed_cost']
 
-PARAMETER_NAMES = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lf', 'fixed_cost', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf']
+PARAMETER_NAMES = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
 TASK_PARAMETER_NAMES = ['MARKOV_PROBABILITY','REWARD_PROBABILITY', 'REWARD']
 
 # all model names
@@ -460,7 +463,7 @@ class MarkovIBL(MarkovState):
         """Inits a markov trial
         stimuli contain a list of markov states, e.g. [("A1", "A2"), ("B1", "B2")]
         """
-        assert (model in ('markov-ibl-mb', 'markov-ibl-hybrid', 'markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid'))
+        assert (model in MODEL_NAMES)
         self.kind = model
         self.index = 0
 
@@ -484,16 +487,24 @@ class MarkovIBL(MarkovState):
         self.init_memory()
         self.init_parameters()
 
+        # q table
+        # {('A', 'f'): 0.147456,
+        #  ('A', 'k'): 0.5904,
+        #  ('B', 'f'): 0,
+        #  ('B', 'k'): 0,
+        #  ('C', 'f'): 0,
+        #  ('C', 'k'): 0}
         self.q = {(s, a): 0 for s in self.state_space for a in self.action_space}
-        self.p = {(s, a): 0 for s in self.state_space for a in self.action_space}
-        if self.kind == 'markov-rl-hybrid':
-            self.q_mf = {(s, a): 0 for s in self.state_space for a in self.action_space}
-            self.q_mb = {(s, a): 0 for s in self.state_space for a in self.action_space}
+        # transition probability table
+        self.p = {('A', 'f', 'B'): 0.7,
+                 ('A', 'f', 'C'): 0.3,
+                 ('A', 'k', 'B'): 0.3,
+                 ('A', 'k', 'C'): 0.7}
 
         self.LL = 0.0
 
         # trial duration
-        self.advance_time = 50
+        self.advance_time = 20
 
     # =================================================== #
     # SETUP
@@ -514,27 +525,35 @@ class MarkovIBL(MarkovState):
         self.memory.activation_history = []
 
     def init_parameters(self):
+        """
+        Initializes the parameters
+        :return:
+        """
 
-        # RL parameters ['beta', 'beta1', 'beta2', 'alpha', 'alpha1', 'alpha2', 'lambda', 'p', 'w', 'temperature', 'decay', 'lf']
         # RL MF/MB parameters
         self.alpha = .2  # learning rate
+        self.beta = 5  # free reverse temperature parameter
+
         # self.alpha1 = .2  # learning rate
         # self.alpha2 = .2  # learning rate
-        self.beta = 5  # stage2 exploration rate
-        self.beta_mf = 5  # stage1 mf exploration rate
-        self.beta_mb = 5  # stage1 mb exploration rate
+        # self.beta_mf = 5  # stage1 mf exploration rate
+        # self.beta_mb = 5  # stage1 mb exploration rate
 
-        self.temperature = .2   # temperature parameter
-        self.decay = .2         # decay parameter
-        self.lf = .63           # latency factor (F)
-        self.fixed_cost = .585           # latency factor (F)
+
         self.lambda_parameter = .2  # decay rate
-        self.p_parameter = 0    # perseveration rate
-        # self.w_parameter = 0  # w = 0: pure MF
+        self.p_parameter = 0        # perseveration rate
+        self.w_parameter = 0      # w = 0: pure MF
 
         # IBL parameters
+        self.temperature = .2   # temperature parameter
+        self.decay = .2         # decay parameter
+
         self.memory.noise = self.temperature
         self.memory.decay = self.decay
+
+        # Latency paramters
+        self.lf = .63           # latency factor (F)
+        self.fixed_cost = .585  # latency factor (F)
 
 
         # init task parameters
@@ -543,21 +562,21 @@ class MarkovIBL(MarkovState):
                                 'REWARD_PROBABILITY': 'LOAD',
                                 'REWARD': reward_dict,
                                 # RL Parameter
-                                'alpha': self.alpha,  # learning rate
-                                # 'alpha1' : self.alpha1,  # learning rate
-                                # 'alpha2' : self.alpha2,  # learning rate
-                                'beta': self.beta,  # exploration rate at second state
-                                'beta_mf' : self.beta_mf,  # exploration rate
-                                'beta_mb' : self.beta_mb,  # exploration rate
-                                'lambda_parameter' : self.lambda_parameter,  # decay rate
-                                'p_parameter' : self.p_parameter,  # decay rate
-                                # 'w_parameter' : self.w_parameter,  # w = 0: pure MF
+                                'alpha': self.alpha,            # learning rate
+                                # 'alpha1' : self.alpha1,       # learning rate
+                                # 'alpha2' : self.alpha2,       # learning rate
+                                'beta': self.beta,
+                                # 'beta_mf' : self.beta_mf,     # exploration rate
+                                # 'beta_mb' : self.beta_mb,     # exploration rate
+                                'lambda_parameter' : self.lambda_parameter,         # decay rate
+                                'p_parameter' : self.p_parameter,                   # decay rate
+                                'w_parameter' : self.w_parameter,                 # w = 0: pure MF
                                 # IBL Parameter
-                                'temperature' : self.temperature,  # temperature rate
+                                'temperature' : self.temperature,       # temperature rate
                                 'decay' : self.decay,           # decay rate
                                 # retrieval latency parameters
-                                'lf': self.lf,                  # latency factor (F)
-                                'fixed_cost': self.fixed_cost   # fixed cost for time retrieval
+                                'lf': self.lf,                          # latency factor (F)
+                                'fixed_cost': self.fixed_cost           # fixed cost for time retrieval
         }
 
     def update_parameters(self, **kwargs):
@@ -574,13 +593,13 @@ class MarkovIBL(MarkovState):
         # self.alpha1 = self.task_parameters['alpha1']
         # self.alpha2 = self.task_parameters['alpha2']
         self.beta = self.task_parameters['beta']
-        self.beta_mf = self.task_parameters['beta_mf']
-        self.beta_mb = self.task_parameters['beta_mb']
+        # self.beta_mf = self.task_parameters['beta_mf']
+        # self.beta_mb = self.task_parameters['beta_mb']
         self.temperature = self.task_parameters['temperature']
         self.decay = self.task_parameters['decay']
         self.lambda_parameter = self.task_parameters['lambda_parameter']
         self.p_parameter = self.task_parameters['p_parameter']
-        # self.w_parameter = self.task_parameters['w_parameter']
+        self.w_parameter = self.task_parameters['w_parameter']
 
         # update IBL parameters
         self.memory.noise = self.temperature
@@ -628,19 +647,12 @@ class MarkovIBL(MarkovState):
         :return:
         """
         key = None
-        if self.kind == 'markov-ibl-mb':
-            key = self.choose_ibl_mb()
-        elif self.kind == 'markov-ibl-hybrid':
-            key = self.choose_ibl_hybrid()
-        elif self.kind =='markov-rl-mf':
-            key = self.choose_rl_mf()
-        elif self.kind =='markov-rl-mb':
-            key = self.choose_rl_mb()
-        # simple mf/mb hybrid:
-        elif self.kind =='markov-rl-hybrid':
-            key = self.choose_rl_hybrid()
+        if self.markov_state._curr_stage == '1':
+            key = self.choose_state1()
+        elif self.markov_state._curr_stage == '2':
+            key = self.choose_state2()
         else:
-            print('error model', self.kind)
+            pass
 
         self.response = key
         self.next_state(key)
@@ -674,8 +686,15 @@ class MarkovIBL(MarkovState):
         # log
         if self.markov_state.state == 3:
             # update q and encode memory based on algorithm
-            self.encode_memory()
-            self.update_q()
+            s = 'A'
+            s_ = self.markov_state._curr_state
+            a = self.markov_state.state1_response
+            a_ = self.markov_state.state2_response
+            r = self.markov_state.received_reward
+
+            self.encode_memory(s=s, s_=s_, a=a, a_=a_, r=r)
+            self.update_q(s=s, s_=s_, a=a, a_=a_, r=r)
+
 
             # log actr trace
             self.log.append(self.markov_state)
@@ -726,8 +745,7 @@ class MarkovIBL(MarkovState):
             # retrieve event and advance event
             # does not impact RL LL estimation
             self.response = response2
-            self.rl_state2_choice()
-            self.ibl_state2_choice()
+            self.choose_state2()
         # proceed to next trial
         self.next_state_from_data(response1, response2, received_reward, state2, state_frequency, reward_frequency)
 
@@ -747,8 +765,13 @@ class MarkovIBL(MarkovState):
 
         if self.markov_state.state == 3:
             # update q and encode memory based on algorithm
-            self.encode_memory()
-            self.update_q()
+            s = 'A'
+            s_ = self.markov_state._curr_state
+            a = self.markov_state.state1_response
+            a_ = self.markov_state.state2_response
+            r = self.markov_state.received_reward
+            self.encode_memory(s=s, s_=s_, a=a, a_=a_, r=r)
+            self.update_q(s=s, s_=s_, a=a, a_=a_, r=r)
 
             # log actr trace
             self.log.append(self.markov_state)
@@ -784,9 +807,7 @@ class MarkovIBL(MarkovState):
         # Estimate q based on different algorithms
         # RL
         if self.kind.startswith('markov-rl-'):
-            # evaluate both
-            # self.evaluate_rl_mf(response=key)
-            # self.evaluate_rl_mb(response=key)
+            # evaluate hybrid
             self.evaluate_rl_hybrid(response=key)
             mf_value = self.markov_state._mf_value  # self.beta_mf * q_mf
             mb_value = self.markov_state._mb_value  # self.beta_mb * q_mb
@@ -830,6 +851,20 @@ class MarkovIBL(MarkovState):
     # EVALUATE STATE2
     # =================================================== #
 
+    def softmax(self, expected_q_values):
+        """
+        """
+        # Calculate the exponentials of Q-values divided by tau
+        exp_q_values = np.exp(np.array(expected_q_values))
+
+        # Calculate the sum of exponentials
+        exp_sum = np.sum(exp_q_values)
+
+        # Calculate the probabilities of each action
+        probabilities = exp_q_values / exp_sum
+
+        return probabilities
+
     def evaluate_rl_mf(self, response=None):
         """
         Evaluate Q table using RL-MF. If no response is provided, always evaluate LEFT
@@ -838,13 +873,12 @@ class MarkovIBL(MarkovState):
         assert self.markov_state._curr_stage == '1'
         q = self.q.copy()
 
-        # Q(MF)
+        # if no data provided, always evaluate left
         if not response:
-            response = self.action_space[0] # always eval left
-        q_mf = q[('A', response)] - q[('A', MarkovIBL.return_alternative_item(self.action_space, response))]
+            response = self.action_space[0]
 
-        # scale by free parameter beta_mf
-        mf_value = self.beta_mf * q_mf
+        # Q(MF)
+        q_values = [q[('A', a)] for a in self.action_space]
 
         # rep(a)
         try:
@@ -854,13 +888,11 @@ class MarkovIBL(MarkovState):
         rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        # p = expit(self.beta * (q[('A', self.action_space[0])] - q[('A', self.action_space[1])] + rep * self.p_parameter))
-        p = expit(mf_value + rep * self.p_parameter)
+        probabilities = self.softmax([q_mf * self.beta + rep * self.p_parameter for q_mf in q_values])
 
-        # save expecetd value of mf = beta_mb * q_value
-        self.markov_state._mf_value = mf_value
-        self.markov_state._state1_p = p
-        return p
+        self.markov_state._mf_value = q_values
+        self.markov_state._state1_p = probabilities[self.action_space.index(response)]
+        return self.markov_state._state1_p
 
     def evaluate_rl_mb(self, response=None):
         """
@@ -873,22 +905,19 @@ class MarkovIBL(MarkovState):
         :return:
         """
         assert self.markov_state._curr_stage == '1'
-        # Q(MF)
-        if not response:
-            response = self.action_space[0]  # always eval left
-
         q = self.q.copy()
+
+        # if no data provided, always evaluate left
+        if not response:
+            response = self.action_space[0]
+
         b_value = max([q[('B', a)] for a in self.action_space])
         c_value = max([q[('C', a)] for a in self.action_space])
 
-        # Determine the choice
-        if COMMON_TRANS[response] == 'B':
-            q_mb = (2 * .7 - 1) * (b_value - c_value)
-        else:
-            q_mb = (2 * .7 - 1) * (c_value - b_value)
-
-        # scale by beta_mb
-        mb_value = self.beta_mb * q_mb
+        # use transition probability
+        transition_matrix = self.p.copy()
+        q_values = [(2 * transition_matrix[('A', 'f', 'B')] - 1) * (b_value - c_value),
+                    (2 * transition_matrix[('A', 'k', 'C')] - 1) * (c_value - b_value)]
 
         # rep(a)
         try:
@@ -898,12 +927,12 @@ class MarkovIBL(MarkovState):
         rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(mb_value + rep * self.p_parameter)
+        probabilities = self.softmax([q_mb * self.beta + rep * self.p_parameter for q_mb in q_values])
 
-        # save expected q value of mb = beta_mb * q_value
-        self.markov_state._mb_value = mb_value
-        self.markov_state._state1_p = p
-        return p
+
+        self.markov_state._mb_value = q_values
+        self.markov_state._state1_p = probabilities[self.action_space.index(response)]
+        return self.markov_state._state1_p
 
     def evaluate_rl_hybrid(self, response=None):
         """
@@ -917,16 +946,17 @@ class MarkovIBL(MarkovState):
             beta_mf
             beta_mb
         """
+        assert self.markov_state._curr_stage == '1'
+
+        # if no data provided, always evaluate left
         if not response:
-            response = self.action_space[0]  # always eval left
+            response = self.action_space[0]
 
         self.evaluate_rl_mf()
         self.evaluate_rl_mb()
-        # q_hybrid = self.w_parameter * self.markov_state._q_mb + (1 - self.w_parameter) * self.markov_state._q_mf
-
-        # note: no need to x beta_mf since mf_value is already multiplied by beta_mf
-        hybrid_value = self.markov_state._mf_value + self.markov_state._mb_value
-
+        q_values_mf = np.array(self.markov_state._mf_value)
+        q_values_mb = np.array(self.markov_state._mb_value)
+        q_values = self.w_parameter * q_values_mb + (1 - self.w_parameter) * q_values_mf
 
         # rep(a)
         try:
@@ -936,17 +966,13 @@ class MarkovIBL(MarkovState):
         rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
+        probabilities = self.softmax([q_bybrid * self.beta + rep * self.p_parameter for q_bybrid in q_values])
 
-        # Q(Hybrid)
-        self.markov_state._state1_p = p
-        self.markov_state._hybrid_value = hybrid_value
-        return p
+        self.markov_state._hybrid_value = q_values
+        self.markov_state._state1_p = probabilities[self.action_space.index(response)]
+        return self.markov_state._state1_p
 
     def evaluate_ibl_mb(self, response=None):
-        return self.evaluate_ibl_mb1(response=response)
-
-    def evaluate_ibl_mb1(self, response=None):
         """
         Implemented based on to Andrea's idea: use IBL to retrieve frequency, use RL-Q learning to evaluate Q
             q_mb = diff Q value of two s_
@@ -956,63 +982,23 @@ class MarkovIBL(MarkovState):
         """
         q = self.q.copy()
 
-        # simulate response
+        # if no data provided, always evaluate left
         if not response:
+            response = self.action_space[0]
 
-            # IBL Learning: retrieve the most likely (frequent) next state given a1
-            next_states = [self.start_retrieving(rehearse=False, curr_state='A', response=a1)['next_state'] for a1 in self.action_space]
-            # evaluate max Q of s_
-            next_state_max_q = [np.max([q[(s_, a2)] for a2 in self.action_space]) for s_ in next_states]
+        # IBL Learning: retrieve the most likely (frequent) next state given a1
+        s1_ = self.start_retrieving(rehearse=False, curr_state='A', response=self.action_space[0])['next_state']
+        s2_ = self.start_retrieving(rehearse=False, curr_state='A', response=self.action_space[1])['next_state']
 
-            # decide action based on highest Q
-            max_id = np.argmax(next_state_max_q)
-            a = self.action_space[max_id]
-            q_mb = next_state_max_q[0] - next_state_max_q[1]  # left - right
+        s1_value = max([q[(s1_, a)] for a in self.action_space])
+        s2_value = max([q[(s2_, a)] for a in self.action_space])
 
-        # estimate from data (response is known)
-        else:
-            a = self.action_space[0]  # always evaluate left
-            s_ = self.start_retrieving(rehearse=False, curr_state='A', response=a)['next_state']
-            alt_s_ = MarkovIBL.return_alternative_item(['B', 'C'], s_)
-            q_mb = max([q[(s_, a)] for a in self.action_space]) - max([q[(alt_s_, a)] for a in self.action_space])  # left - right
-
-        # scale by beta_mb
-        mb_value = self.beta_mb * q_mb
-
-        # softmax choice rule
-        p = expit(mb_value)
-
-        # save expecetd value of mb = beta_mb * q_value
-        self.markov_state._mb_value = mb_value
-        self.markov_state._state1_p = p
-        return a
-
-    def evaluate_ibl_mb2(self, response=None):
-        """
-        Implemented based on to memory sampling idea
-
-        :param response:
-        :return:
-        """
-        assert self.markov_state._curr_stage == '1'
-        # Q(MF)
-        if not response:
-            response = self.action_space[0]  # always eval left
-
-        q = self.q.copy()
-        b_value = max([q[('B', a)] for a in self.action_space])
-        c_value = max([q[('C', a)] for a in self.action_space])
-
-        # Determine the choice
-        # Sampling memory
-        estimated_freq = self.sampling_memory(response=response)
-        if COMMON_TRANS[response] == 'B':
-            q_mb = (2 * estimated_freq - 1) * (b_value - c_value)
-        else:
-            q_mb = (2 * estimated_freq - 1) * (c_value - b_value)
-
-        # scale by beta_mb
-        mb_value = self.beta_mb * q_mb
+        # evaluate max Q of s_
+        transition_matrix = self.p.copy() # use default 0.7/0.3
+        transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more chaos
+        # print(transition_matrix)
+        q_values = [(2 * transition_matrix[('A', self.action_space[0], s1_)] - 1) * (s1_value - s2_value),
+                    (2 * transition_matrix[('A', self.action_space[1], s2_)] - 1) * (s2_value - s1_value)]
 
         # rep(a)
         try:
@@ -1022,87 +1008,43 @@ class MarkovIBL(MarkovState):
         rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(mb_value + rep * self.p_parameter)
+        probabilities = self.softmax([q_mb * self.beta + rep * self.p_parameter for q_mb in q_values])
 
-        # decide action
-        if random.random() < p:
-            a = response
-        else:
-            a = MarkovIBL.return_alternative_item(self.action_space, response)
+        self.markov_state._mb_value = q_values
+        self.markov_state._state1_p = probabilities[self.action_space.index(response)]
+        return self.markov_state._state1_p
 
-        # save expected q value of mb = beta_mb * q_value
-        self.markov_state._mb_value = mb_value
-        self.markov_state._state1_p = p
-        return a
-
-    def sampling_memory(self, response, n=10):
-        samples = [self.memory.retrieve(rehearse=False, curr_state='A', response=response)['next_state'] for i in range(n)]
-        estimated_freq = np.round(samples.count('B')/n, 2)
-        return estimated_freq
-
-    def evaluate_ibl_hybrid(self, response=None):
-        return self.evaluate_ibl_hybrid1(response=response)
-
-    def evaluate_ibl_hybrid1(self, response=None):
+    def sampling_memory(self, n=10):
         """
-        A combination of RL-MF + IBL-MB
-        The potential problem of this model is, no matter what, it will go through MB evaluation process
+        Sampling memories to estimate probability
+        :param n:
         :return:
         """
-        # value of MB
-        mb_response = self.evaluate_ibl_mb(response=response)
+        transition_matrix = {('A', 'f', 'B'): 0,
+                             ('A', 'f', 'C'): 0,
+                             ('A', 'k', 'B'): 0,
+                             ('A', 'k', 'C'): 0}
+        samples = [self.memory.retrieve(rehearse=False, curr_state='A') for i in range(n)]
+        for a in self.action_space:
+            states, counts = np.unique([m['next_state'] for m in samples if (m['response'] == a)], return_counts=True)
+            freq = counts / sum(counts)
+            d = dict(zip([('A', a, s) for s in states], freq))
+            transition_matrix.update(d)
+        return transition_matrix
+
+    def evaluate_ibl_hybrid(self, response=None):
+        assert self.markov_state._curr_stage == '1'
+
+        # if no data provided, always evaluate left
         if not response:
-            # response = self.markov_state._retrieved_response
-            response = mb_response
-        mb_value = self.markov_state._mb_value
-
-        # value of MF
-        self.evaluate_rl_mf(response=response)
-        mf_value = self.markov_state._mf_value
-
-        # calculate blended value
-        # hybrid_value = self.w_parameter * mb_value + (1 - self.w_parameter) * mf_value
-        hybrid_value = mf_value + mb_value
-
-        # control stickness
-        try:
-            prev_choice = self.log[-1].state1_response
-        except:
-            prev_choice = random.choice(self.action_space)
-        rep = 1 if prev_choice == response else -1
-
-        # softmax choice rule
-        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
-
-        if random.random() < p:
-            a = response
-        else:
-            a = MarkovIBL.return_alternative_item(self.action_space, response)
-
-        self.markov_state._state1_p = p
-        self.markov_state._hybrid_value = hybrid_value
-        return a
-
-    def evaluate_ibl_hybrid2(self, response=None):
-        """
-        According to Daw 2011
-        Evaluate Q table using RL-Hybrid
-        >> best parameter combination
-            alpha=.5,
-            beta=5,
-            p_parameter=0,
-            lambda_parameter=.6
-            beta_mf
-            beta_mb
-        """
-        if not response:
-            response = self.action_space[0]  # always eval left
+            response = self.action_space[0]
 
         self.evaluate_rl_mf(response=response)
         self.evaluate_ibl_mb(response=response)
 
-        # note: no need to x beta_mf since mf_value is already multiplied by beta_mf
-        hybrid_value = self.markov_state._mf_value + self.markov_state._mb_value
+        q_values_mf = np.array(self.markov_state._mf_value)
+        q_values_mb = np.array(self.markov_state._mb_value)
+        q_values = self.w_parameter * q_values_mb + (1 - self.w_parameter) * q_values_mf
 
         # rep(a)
         try:
@@ -1112,19 +1054,11 @@ class MarkovIBL(MarkovState):
         rep = 1 if prev_choice == response else -1
 
         # softmax choice rule
-        p = expit(hybrid_value + rep * self.p_parameter)  # p_left
+        probabilities = self.softmax([q_bybrid * self.beta + rep * self.p_parameter for q_bybrid in q_values])
 
-        if random.random() < p:
-            a = response
-        else:
-            a = MarkovIBL.return_alternative_item(self.action_space, response)
-
-        # Q(Hybrid)
-        self.markov_state._state1_p = p
-        self.markov_state._hybrid_value = hybrid_value
-        return a
-
-
+        self.markov_state._hybrid_value = q_values
+        self.markov_state._state1_p = probabilities[self.action_space.index(response)]
+        return self.markov_state._state1_p
 
     def retrieve_response_from_state(self, s_):
         """
@@ -1138,90 +1072,43 @@ class MarkovIBL(MarkovState):
         self.memory.advance()
         return retrieved_response
 
-
-
     # =================================================== #
     # CHOOSE STATE1
     # =================================================== #
-
-    def choose_rl_mf(self):
-        """
-        Use model-free algorithm modified based on Feher da Silva 2018
-        :return:
-        """
-        q = self.q.copy()
-        if self.markov_state._curr_stage == '1':
+    def choose_state1(self):
+        assert (self.markov_state._curr_stage == '1')
+        p = 0
+        if self.kind == 'markov-rl-mf':
             p = self.evaluate_rl_mf()
-            if random.random() < p:   # p_left
-                a = self.action_space[0]
-            else:
-                a = self.action_space[1]
-            return a
-        else:
-            # beta: exploration  parameter
-            return self.rl_state2_choice()
-
-    def choose_rl_mb(self):
-        """
-        Use model-base algorithm modified based on Feher da Silva 2018
-        :return:
-        """
-        q = self.q.copy()
-        if self.markov_state._curr_stage == '1':
+        elif self.kind == 'markov-rl-mb':
             p = self.evaluate_rl_mb()
-            if random.random() < p:
-                a = self.action_space[0]
-            else:
-                a = self.action_space[1]
-            return a
-        else:
-            return self.rl_state2_choice()
-
-    def choose_rl_hybrid(self):
-        """
-        Choose action using hybrid MF/MB algorithm
-        :return:
-        """
-        q = self.q.copy()
-        if self.markov_state._curr_stage == '1':
+        elif self.kind =='markov-rl-hybrid':
             p = self.evaluate_rl_hybrid()
-            if random.random() < p:
-                a = self.action_space[0]
-            else:
-                a = self.action_space[1]
-            return a
+        elif self.kind =='markov-ibl-mb':
+            p = self.evaluate_ibl_mb()
+        elif self.kind =='markov-ibl-hybrid':
+            p = self.evaluate_ibl_hybrid()
         else:
-            return self.rl_state2_choice()
+            print('error model', self.kind)
 
-    def choose_ibl_mb(self):
-        """
-        Use IBL algorithm
-        :return:
-        """
-        if self.markov_state._curr_stage == '1':
-            a = self.evaluate_ibl_mb()
-            return a
+        if random.random() < p:  # p_left
+            a = self.action_space[0]
         else:
-            a = self.ibl_state2_choice()
-            return a
+            a = self.action_space[1]
+        return a
 
-    def choose_ibl_hybrid(self):
-        """
-        Use IBL algorithm
-        :return:
-        """
-        if self.markov_state._curr_stage == '1':
-            a = self.evaluate_ibl_hybrid()
-            return a
+    def choose_state2(self, response=None):
+        assert (self.markov_state._curr_stage == '2')
+        if self.kind.startswith('markov-rl'):
+            return self.rl_state2_choice(response=response)
         else:
-            a = self.ibl_state2_choice() 
-            return a
+            return self.ibl_state2_choice(response=response)
 
     # =================================================== #
     # CHOOSE STATE2
     # =================================================== #
 
-    def rl_state2_choice(self):
+    def rl_state2_choice(self, response=None):
         assert self.markov_state._curr_stage == '2'
         """Get simulated choice at state2 using RL
         Keyword arguments:
@@ -1240,12 +1127,15 @@ class MarkovIBL(MarkovState):
                 return self.action_space[a]
         return a
 
-    def ibl_state2_choice(self):
+    def ibl_state2_choice(self, response=None):
         assert self.markov_state._curr_stage == '2'
         """Get simulated choice at state2 using IBL
         Keyword arguments: 
         """
         assert self.markov_state._curr_stage == '2'
+        if response:
+            self.start_retrieving(rehearse=False, curr_state=self.markov_state._curr_state, response=response)
+            return response
         retrieved_memory = self.start_retrieving(rehearse=False, curr_state=self.markov_state._curr_state)
         if retrieved_memory['reward'] > 0:
             a = retrieved_memory['response']
@@ -1257,45 +1147,106 @@ class MarkovIBL(MarkovState):
     #  RL: UPDATE Q
     # =================================================== #
 
-    def update_q(self):
+    def update_q(self, s, s_, a, a_, r):
+        if self.kind.endswith('mf'):
+            q = self.update_q_model_free(s, s_, a, a_, r)
+        elif self.kind.endswith('mb'):
+            q = self.update_q_model_based(s, s_, a, a_, r)
+        elif self.kind.endswith('hybrid'):
+            q = self.update_q_hybrid(s, s_, a, a_, r, self.w_parameter)  # weight
+        else:
+            print('Error model name', self.kind)
+            pass
+
+    def update_q_model_free(self, s, s_, a, a_, r):
         """
-        Update Q table (RL MF/MB)
-        :return:
+        Update the Q values using a model-free RL algorithm  with TDL
+        :param s: The previous state (e.g. 'A')
+        :param s_: The current state (e.g. 'B')
+        :param a: The previous action (e.g. 'f')
+        :param a_: The current action (e.g. 'k')
+        :param r: The reward experienced
         """
         q = self.q.copy()
-        s = 'A'
-        s_ = self.markov_state._curr_state
-        a = self.markov_state.state1_response
-        a_ = self.markov_state.state2_response
-        r = self.markov_state.received_reward
+        # Calculate the prediction error for the second stage
+        pred_error2 = r - q[(s_, a_)]
 
-        # print('before', q)
-        q[(s, a)] = (1 - self.alpha) * q[(s, a)] + self.alpha * q[(s_, a_)] + \
-                 self.alpha * self.lambda_parameter * (r - q[(s_, a_)])
-        q[(s_, a_)] = (1 - self.alpha) * q[(s_, a_)] + self.alpha * r
-        # print('after', q)
+        # Update the Q value for the second stage
+        q[(s_, a_)] += self.alpha * pred_error2
+
+        # Calculate the prediction error for the first stage
+        pred_error1 = q[(s_, a_)] - q[(s, a)]
+
+        # Update the Q value for the first stage
+        q[(s, a)] += self.alpha * self.lambda_parameter * pred_error1
+
         self.q = q.copy()
         self.markov_state.q = q.copy()
+        return q
+
+    def update_q_model_based(self, s, s_, a, a_, r):
+        """
+        Update the Q values using a model-based RL algorithm.
+
+        :param s: The previous state (e.g. 'A')
+        :param s_: The current state (e.g. 'B')
+        :param a: The previous action (e.g. 'f')
+        :param a_: The current action (e.g. 'k')
+        :param r: The reward experienced
+        """
+        q = self.q.copy()
+
+        # Update the Q value for the second stage
+        q[(s_, a_)] += self.alpha * (r - q[(s_, a_)])
+
+        # Calculate the expected future reward for the first stage
+        expected_future_reward = 0
+        for next_state in self.state_space[1:]:
+            transition_prob = self.p[(s, a, next_state)]
+            max_q_next_state = max(q[(next_state, next_a)] for next_a in self.action_space)
+            expected_future_reward += transition_prob * max_q_next_state
+
+        # Update the Q value for the first stage
+        q[(s, a)] += self.alpha * self.lambda_parameter * (expected_future_reward - q[(s, a)])
+
+        self.q = q.copy()
+        self.markov_state.q = q.copy()
+        return q
+
+    def update_q_hybrid(self, s, s_, a, a_, r, w):
+        """
+        Update the Q values using a hybrid RL algorithm that
+        combines model-free and model-based approaches.
+
+        :param s: The previous state (e.g. 'A')
+        :param s_: The current state (e.g. 'B')
+        :param a: The previous action (e.g. 'f')
+        :param a_: The current action (e.g. 'k')
+        :param r: The reward experienced
+        :param w: The weight given to the model-based component (0 <= w <= 1)
+        """
+        q_mf = self.update_q_model_free(s, s_, a, a_, r)
+        q_mb = self.update_q_model_based(s, s_, a, a_, r)
+
+        q_hybrid = {}
+        for key in q_mf:
+            q_hybrid[key] = (1 - w) * q_mf[key] + w * q_mb[key]
+
+        self.q = q_hybrid.copy()
+        self.markov_state.q = q_hybrid.copy()
+        return q_hybrid
 
     # =================================================== #
     # IBL: ENCODE MEMORY
     # =================================================== #
 
-    def encode_memory(self):
+    def encode_memory(self, s, a, s_, a_, r):
         """
         Simple encode memory of current trial
         :return:
         """
-        s = 'A'
-        s_ = self.markov_state._curr_state
-        a = self.markov_state.state1_response
-        a_ = self.markov_state.state2_response
-        r = self.markov_state.received_reward
-
-        # if r > 0:
         self.memory.learn(state='<S%d>' % (1), curr_state=s, next_state=s_, response=a, reward=r)
         self.memory.learn(state='<S%d>' % (2), curr_state=s_, next_state=None, response=a_, reward=r)
-
         self.memory.advance(self.advance_time)
 
     def start_blending(self, outcome_attribute, curr_state):
@@ -1369,8 +1320,6 @@ class MarkovIBL(MarkovState):
             self.markov_state.state1_response_time += retrieve_latency
         if self.markov_state._curr_stage == '2':
             self.markov_state.state2_response_time += retrieve_latency
-
-
 
     # =================================================== #
     # ACT-R MATH FUNCTIONS
@@ -1505,47 +1454,102 @@ class MarkovIBL(MarkovState):
     # =================================================== #
     # PARAMETER ESTIMATION
     # =================================================== #
-    def estimate_LL(self, df, model_name='markov-rl-mf', init=True, verbose=False, **params):
-        """
-        trial by trial estimation
-        LL += np.log(prob)
-        :return:
-        """
-        # init everything
-        if init:
-            self.kind = model_name
-            self.LL = 0.0
-            q = self.q.copy()
-            self.q = q.copy().fromkeys(q, 0)
-            self.log = []
-            self.init_memory()
-            self.update_parameters(**params)
+    # def estimate_LL(self, df, model_name='markov-rl-mf', init=True, verbose=False, **params):
+    #     """
+    #     trial by trial estimation
+    #     LL += np.log(prob)
+    #     :return:
+    #     """
+    #     # init everything
+    #     if init:
+    #         self.kind = model_name
+    #         self.LL = 0.0
+    #         q = self.q.copy()
+    #         self.q = q.copy().fromkeys(q, 0)
+    #         self.log = []
+    #         self.init_memory()
+    #         self.update_parameters(**params)
+    #
+    #     # do not display every trial information
+    #     self.verbose = False
+    #
+    #     for i, row in df.iterrows():
+    #         self.markov_state = MarkovState()
+    #         self.markov_state.state0()  # init
+    #         self.respond_from_data(response1=row['state1_response'],
+    #                                response2=row['state2_response'],
+    #                                received_reward=row['received_reward'],
+    #                                state2='B',
+    #                                state_frequency=row['state_frequency'],
+    #                                reward_frequency='common')
+    #         self.respond_from_data(response1=row['state1_response'],
+    #                                response2=row['state2_response'],
+    #                                received_reward=row['received_reward'],
+    #                                state2='B',
+    #                                state_frequency=row['state_frequency'],
+    #                                reward_frequency='common')
+    #         self.index += 1
+    #     if verbose:
+    #         print('>>> ESTIMATE LOG-LIKELIHOOD %s [SUBJECT: %s] <<<' % (self.kind, df['subject_id'].unique()[0]))
+    #         print('>>> PARAMETERS: %s <<<\n' % str(self.task_parameters))
+    #         print('\t...Log-Likelihood = [%.2f]' % (self.LL))
+    #
+    #     return self.LL
 
-        # do not display every trial information
+    def estimate_log_likelihood(self, df, model_name='markov-rl-mf', verbose=False, **params):
+        # init
+        self.init_memory()
+        self.update_parameters(**params)
+        alpha, beta, lambda_parameter, p_parameter = self.alpha, self.beta, self.lambda_parameter, self.p_parameter
         self.verbose = False
 
-        for i, row in df.iterrows():
-            self.markov_state = MarkovState()
-            self.markov_state.state0()  # init
-            self.respond_from_data(response1=row['state1_response'],
-                                   response2=row['state2_response'],
-                                   received_reward=row['received_reward'],
-                                   state2='B',
-                                   state_frequency=row['state_frequency'],
-                                   reward_frequency='common')
-            self.respond_from_data(response1=row['state1_response'],
-                                   response2=row['state2_response'],
-                                   received_reward=row['received_reward'],
-                                   state2='B',
-                                   state_frequency=row['state_frequency'],
-                                   reward_frequency='common')
-            self.index += 1
-        if verbose:
-            print('>>> ESTIMATE LOG-LIKELIHOOD %s [SUBJECT: %s] <<<' % (self.kind, df['subject_id'].unique()[0]))
-            print('>>> PARAMETERS: %s <<<\n' % str(self.task_parameters))
-            print('\t...Log-Likelihood = [%.2f]' % (self.LL))
 
-        return self.LL
+        log_likelihood = 0.0
+        prev_choice = None
+
+        for i, row in df.iterrows():
+
+            # read trial data
+            s, a, a_, r = 'A', row['state1_response'], row['state2_response'], row['received_reward']
+            if row['state_frequency'] == 'common':
+                s_ = COMMON_TRANS[a]
+            else:
+                s_ = MarkovIBL.return_alternative_item(['B', 'C'], COMMON_TRANS[a])
+
+            # update Q-value for the first action in stage 1
+            self.update_q(s, s_, a, a_, r)
+
+            # evaluate response
+            if model_name == 'markov-rl-mf':
+                prob = self.evaluate_rl_mf(response=a)
+            elif model_name == 'markov-rl-mb':
+                prob = self.evaluate_rl_mb(response=a)
+            elif model_name == 'markov-rl-hybrid':
+                prob = self.evaluate_rl_hybrid(response=a)
+            else:
+                pass
+
+            # sum the log-likelihood of response switch (suggested by chatGDP)
+            # if row['state1_stay'] == 0:
+            #     prob = 1 - prob
+
+            # sum the log-likelihood of a particular response
+            log_likelihood = +np.log(prob)
+
+        # Prior log-likelihood
+        prior_alpha = beta_dist.logpdf(alpha, 1.1, 1.1)
+        prior_beta = gamma.logpdf(beta, 3, scale=1)
+        prior_lambda = beta_dist.logpdf(alpha, 1.1, 1.1)
+        prior_p = norm.logpdf(p_parameter, 0, 10)
+
+        # Posterior log-likelihood
+        posterior_log_likelihood = log_likelihood + prior_alpha + prior_beta + prior_lambda + prior_p
+
+        if verbose:
+            print('>>> ESTIMATE LOG-LIKELIHOOD %s [SUBJECT: %s] <<<' % (model_name, df['subject_id'].unique()[0]))
+            print('>>> PARAMETERS: %s <<<\n' % str(self.task_parameters))
+            print('\t...Log-Likelihood = [%.2f]' % (log_likelihood))
+        return log_likelihood
 
     def estimate_mod_coef_(self):
         """
@@ -1647,10 +1651,11 @@ class MarkovSimulation():
         # params =  dict(zip(est.param_names, est.param_inits))
         params = {'alpha': 0.2,
                   'beta': 2,
-                  'beta_mf': 2,
-                  'beta_mb': 2,
+                  #'beta_mf': 2,
+                  #'beta_mb': 2,
                   'lambda_parameter': .5,
                   'p_parameter': 0,
+                  'w_parameter':.5,
                   'temperature': 0.2,
                   'decay': 0.5,
                   'lf': 0.5,
@@ -1761,25 +1766,45 @@ class MarkovEstimation():
         TODO: implement estimation for response time parameter lf, fixed costs
         :return:
         """
-        param_names = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
-        # param_bounds = {'alpha':(0,1), 'beta':(0,30), 'beta_mf':(0,30), 'beta_mb':(0, 30), 'lambda_parameter':(0,1), 'p_parameter':(-30,30), 'temperature':(0.01,1), 'decay':(0.01,1.6), 'lf':(0.01,1), 'fixed_cost':(0,1)}
-        param_bounds = {'alpha':(0,1), 'beta':(0,5), 'beta_mf':(0,5), 'beta_mb':(0,5), 'lambda_parameter':(0,1), 'p_parameter':(-2,2), 'temperature':(0.01,2), 'decay':(0.01,1.5), 'lf':(0.01,1), 'fixed_cost':(0,1)}
-        param_zero_bounds = {'alpha':(0.5,0.5), 'beta':(2,2), 'beta_mf':(2,2), 'beta_mb':(2,2), 'lambda_parameter':(0.5,0.5), 'p_parameter':(.5,.5), 'temperature':(0.2,0.2), 'decay':(0.5,0.5), 'lf':(0.5,0.5), 'fixed_cost':(0,0)}
+        param_names = PARAMETER_NAMES
+        param_bounds = {'alpha':(0,1),
+                        'beta':(0,5),
+                        #'beta_mf':(0,5),
+                        # 'beta_mb':(0,5),
+                        'lambda_parameter':(0,1),
+                        'p_parameter':(-2,2),
+                        'w_parameter': (0, 1),
+                        'temperature':(0.01,2),
+                        'decay':(0.01,1.5),
+                        'lf':(0.01,1),
+                        'fixed_cost':(0,1)}
+
+        param_zero_bounds = {'alpha':(0.5,0.5),
+                             'beta':(2,2),
+                             #'beta_mf':(2,2),
+                             # 'beta_mb':(2,2),
+                             'lambda_parameter':(0.5,0.5),
+                             'p_parameter':(0,0),
+                             'w_parameter': (0, 0),
+                             'temperature':(0.2,0.2),
+                             'decay':(0.5,0.5),
+                             'lf':(0.5,0.5),
+                             'fixed_cost':(0,0)}
 
         if self.kind == 'markov-rl-mf':
-            exclude = ['beta_mb', 'temperature', 'decay', 'lf', 'fixed_cost']
+            exclude = ['w_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
 
         elif self.kind == 'markov-rl-mb':
-            exclude = ['beta_mf', 'temperature', 'decay', 'lf', 'fixed_cost']
+            exclude = ['w_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
 
         elif self.kind == 'markov-rl-hybrid':
-            exclude = ['temperature', 'decay', 'lf', 'fixed_cost'] # exclude latency parameter
+            exclude =  ['p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
 
         elif self.kind == 'markov-ibl-mb':
-            exclude = ['alpha', 'beta', 'beta_mf', 'beta_mb', 'lambda_parameter', 'p_parameter', 'lf', 'fixed_cost'] # exclude latency parameter
-            exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
+            # exclude latency parameter
+            exclude = ['p_parameter', 'lf', 'fixed_cost']
         elif self.kind == 'markov-ibl-hybrid':
-            exclude = ['beta', 'lf', 'fixed_cost'] # exclude latency parameter
+            exclude = ['p_parameter', 'lf', 'fixed_cost']
         else:
             pass
 
@@ -1793,14 +1818,6 @@ class MarkovEstimation():
         self.param_ls = [np.unique(np.round(np.linspace(l, u, num=5), 2)) for (l, u) in self.param_bounds]
         self.param_gs_ls = [dict(zip(self.param_names, c))for c in list(itertools.product(*self.param_ls))]
 
-        # self.param_init = [np.random.beta(1.1,1.1), # alpha
-        #                    np.random.gamma(3, 1),   # beta
-        #                    np.random.gamma(3, 1),   # beta_mf
-        #                    np.random.gamma(3, 1),   # beta_mb
-        #                    np.random.beta(1.1,1.1), # lambda_parameter
-        #                    np.random.normal(0,10),  # p_parameter
-        #                    np.random.normal(0, 1),  # temperature
-        #                    np.random.normal(0, 1)]  # decay
 
     def init_data(self, subject_dir, subject_id, drop_first_9):
         """
@@ -1930,7 +1947,7 @@ class MarkovEstimation():
         bvals = np.exp(vals) / np.sum(np.exp(vals))
         return dict(zip(options, bvals))
 
-    def estimate_function(self, param_values = None):
+    def estimate_log_likelihood(self, param_values = None):
         """
         Estimate LL for instance of
         :param model_name:
@@ -1938,27 +1955,14 @@ class MarkovEstimation():
         :param args: a list of values
         :return:
         """
-        assert (self.data is not None) and (len(param_values) == 8 | len(param_values) == 10)
+        assert (self.data is not None)
         # define parameters
         param_dict = dict(zip(PARAMETER_NAMES, param_values))
-        est_instance = MarkovIBL(verbose=False)
+        a = MarkovIBL(verbose=False)
 
-        LL = est_instance.estimate_LL(df=self.data, init=True, verbose=self.verbose, model_name=self.kind,  **param_dict)
-        # LL = MarkovEstimation.estimate_postLL(df=self.data, model_name=self.kind, e=50, verbose=self.verbose, **param_dict)
-        return LL
+        LL = a.estimate_log_likelihood(df=self.data, verbose=self.verbose, model_name=self.kind,  **param_dict)
+        return -1 * LL
 
-    def v_function(self, param_values):
-        """
-        Vector function for optimization
-        Multiply by -1 to minimize = maximize LL
-        :param args:
-        :return:
-        """
-        assert (self.data is not None) and (len(param_values) > 0)
-        # alpha = x0[0]
-        # beta = x0[1]
-        # ...
-        return -1 * self.estimate_function(param_values=param_values)
 
     @staticmethod
     def optimization_function(df, x0, param_bounds, estimate_model='markov-rl-mf', drop_first_9=False):
@@ -1978,7 +1982,7 @@ class MarkovEstimation():
         est.data = df
 
         # start optimization
-        res = opt.minimize(est.v_function, x0=x0, bounds=param_bounds, method="Nelder-Mead")
+        res = opt.minimize(est.estimate_log_likelihood, x0=x0, bounds=param_bounds, method="Nelder-Mead")
         return res
 
     @staticmethod
