@@ -1805,14 +1805,15 @@ class MarkovEstimation():
         TODO: implement estimation for response time parameter lf, fixed costs
         :return:
         """
+        np.random.seed(None)
         param_names = PARAMETER_NAMES
         param_bounds = {'alpha':(0,1),
                         'beta':(0,5),
                         #'beta_mf':(0,5),
                         # 'beta_mb':(0,5),
                         'lambda_parameter':(0,1),
-                        'p_parameter':(-2,2),
-                        'w_parameter': (0, 1),
+                        'p_parameter':(-30,30),
+                        'w_parameter': (0,1),
                         'temperature':(0.01,2),
                         'decay':(0.01,1.5),
                         'lf':(0.01,1),
@@ -1856,7 +1857,6 @@ class MarkovEstimation():
         # grid search
         self.param_ls = [np.unique(np.round(np.linspace(l, u, num=5), 2)) for (l, u) in self.param_bounds]
         self.param_gs_ls = [dict(zip(self.param_names, c))for c in list(itertools.product(*self.param_ls))]
-
 
     def init_data(self, subject_dir, subject_id, drop_first_9):
         """
@@ -2046,7 +2046,8 @@ class MarkovEstimation():
             {**dict(zip(est.param_names, res['x'])),
              'maxLL':-1*res['fun'],
              'estimate_model': estimate_model,
-             'subject_id': subject_id},
+             'subject_id': subject_id,
+             'init':str(est.param_inits)},
             index=[0]).round(4)
 
         if not save_output:

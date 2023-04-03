@@ -7,7 +7,7 @@ sys.path.insert(0, SCRIPT_PATH)
 
 
 from markov_pyactup import *
-random.seed(0)
+# random.seed(0)
 
 TEST = False
 
@@ -25,7 +25,7 @@ epoch = 10
 dir_date = date.today().strftime("%m%d")
 
 if TEST:
-    epoch = 2
+    epoch = 5
     subject_ids = ['1', '2']
     estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
     dir_date = 'test'
