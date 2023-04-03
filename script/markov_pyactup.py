@@ -1552,6 +1552,7 @@ class MarkovIBL(MarkovState):
                 choice2_prob = self.markov_state._state2_p
             elif self.kind.startswith('markov-ibl'):
                 # TODO: implement probability of retrieving a chunk
+                self.rl_state2_choice(response=a_)
                 choice2_prob = self.markov_state._state2_p
             else:
                 choice2_prob = 0
@@ -1816,7 +1817,7 @@ class MarkovEstimation():
                              # 'beta_mb':(2,2),
                              'lambda_parameter':(0.5,0.5),
                              'p_parameter':(0,0),
-                             'w_parameter': (0, 0),
+                             'w_parameter': (0.5, 0.5),
                              'temperature':(0.2,0.2),
                              'decay':(0.5,0.5),
                              'lf':(0.5,0.5),
@@ -1833,7 +1834,7 @@ class MarkovEstimation():
 
         elif self.kind == 'markov-ibl-mb':
             # exclude latency parameter
-            exclude = ['p_parameter', 'lf', 'fixed_cost']
+            exclude = ['w_parameter','p_parameter', 'lf', 'fixed_cost']
         elif self.kind == 'markov-ibl-hybrid':
             exclude = ['p_parameter', 'lf', 'fixed_cost']
         else:
