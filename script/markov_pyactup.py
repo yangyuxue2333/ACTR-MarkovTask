@@ -994,9 +994,11 @@ class MarkovIBL(MarkovState):
         s2_value = max([q[(s2_, a)] for a in self.action_space])
 
         # evaluate max Q of s_
-        transition_matrix = self.p.copy() # use default 0.7/0.3
-        transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more chaos
-        # print(transition_matrix)
+        # transition_matrix = self.p.copy() # use default 0.7/0.3
+        transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more noisy
+        self.p = transition_matrix.copy()
+
+        # calculate MB q_values
         q_values = [(2 * transition_matrix[('A', self.action_space[0], s1_)] - 1) * (s1_value - s2_value),
                     (2 * transition_matrix[('A', self.action_space[1], s2_)] - 1) * (s2_value - s1_value)]
 
@@ -1158,8 +1160,12 @@ class MarkovIBL(MarkovState):
         if self.kind.endswith('mf'):
             q = self.update_q_model_free(s, s_, a, a_, r)
         elif self.kind.endswith('mb'):
+            # note: ibl-mb uses similar update_q function as rl-mb
+            # except transition_matrix is different
             q = self.update_q_model_based(s, s_, a, a_, r)
         elif self.kind.endswith('hybrid'):
+            # note: ibl-hybrid uses similar update_q function as rl-hybrid
+            # when call update_q_model_based() transition_matrix is different
             q = self.update_q_hybrid(s, s_, a, a_, r, self.w_parameter)  # weight
         else:
             print('Error model name', self.kind)
@@ -1242,6 +1248,7 @@ class MarkovIBL(MarkovState):
         self.q = q_hybrid.copy()
         self.markov_state.q = q_hybrid.copy()
         return q_hybrid
+
 
     # =================================================== #
     # IBL: ENCODE MEMORY
