@@ -861,7 +861,7 @@ class MarkovIBL(MarkovState):
         exp_sum = np.sum(exp_q_values)
 
         # Calculate the probabilities of each action
-        probabilities = exp_q_values / exp_sum
+        probabilities = exp_q_values / max(exp_sum, 1e-10)
 
         return probabilities
 
@@ -1116,12 +1116,19 @@ class MarkovIBL(MarkovState):
         beta: exploration parameter
         """
         q = self.q.copy()
-        probs = np.array(
-            [np.exp(self.beta * v) for (s, a), v in q.items() if s == self.markov_state._curr_state])
-        probs /= np.sum(probs)
+        if not response:
+            response = self.action_space[0]
+
+        q_values = [v for (s, a), v in q.items() if s == self.markov_state._curr_state]
+        probabilities = self.softmax([q * self.beta for q in q_values])
+
+        p = probabilities[self.action_space.index(response)]
+        self.markov_state._state2_p = p
+
+        # decide choice
         r = random.random()
         s = 0
-        for a, x in enumerate(probs):
+        for a, x in enumerate(probabilities):
             s += x
             if s >= r:
                 return self.action_space[a]
@@ -1496,7 +1503,7 @@ class MarkovIBL(MarkovState):
     #
     #     return self.LL
 
-    def estimate_log_likelihood(self, df, model_name='markov-rl-mf', verbose=False, **params):
+    def estimate_log_likelihood(self, df, verbose=False, **params):
         # init
         self.init_memory()
         self.update_parameters(**params)
@@ -1519,22 +1526,45 @@ class MarkovIBL(MarkovState):
             # update Q-value for the first action in stage 1
             self.update_q(s, s_, a, a_, r)
 
-            # evaluate response
-            if model_name == 'markov-rl-mf':
-                prob = self.evaluate_rl_mf(response=a)
-            elif model_name == 'markov-rl-mb':
-                prob = self.evaluate_rl_mb(response=a)
-            elif model_name == 'markov-rl-hybrid':
-                prob = self.evaluate_rl_hybrid(response=a)
+            # evaluate state1 response
+            self.markov_state._curr_stage = '1'
+            if self.kind == 'markov-rl-mf':
+                choice1_prob = self.evaluate_rl_mf(response=a)
+            elif self.kind == 'markov-rl-mb':
+                choice1_prob = self.evaluate_rl_mb(response=a)
+            elif self.kind == 'markov-rl-hybrid':
+                choice1_prob = self.evaluate_rl_hybrid(response=a)
+            elif self.kind == 'markov-ibl-mb':
+                choice1_prob = self.evaluate_ibl_mb(response=a)
+            elif self.kind == 'markov-ibl-hybrid':
+                choice1_prob = self.evaluate_ibl_hybrid(response=a)
             else:
-                pass
+                choice1_prob = 0
+                print('error model', self.kind)
+
+            # sum the log-likelihood of a particular response
+            log_likelihood += np.log(max(choice1_prob, 10e-10))
+
+            # evaluate state2 response
+            self.markov_state._curr_stage = '2'
+            if self.kind.startswith('markov-rl'):
+                self.rl_state2_choice(response=a_)
+                choice2_prob = self.markov_state._state2_p
+            elif self.kind.startswith('markov-ibl'):
+                # TODO: implement probability of retrieving a chunk
+                choice2_prob = self.markov_state._state2_p
+            else:
+                choice2_prob = 0
+                print('error model', self.kind)
+
+            # sum the log-likelihood of a particular response
+            log_likelihood += np.log(max(choice2_prob, 10e-10))
+
 
             # sum the log-likelihood of response switch (suggested by chatGDP)
             # if row['state1_stay'] == 0:
             #     prob = 1 - prob
 
-            # sum the log-likelihood of a particular response
-            log_likelihood = +np.log(prob)
 
         # Prior log-likelihood
         prior_alpha = beta_dist.logpdf(alpha, 1.1, 1.1)
@@ -1543,12 +1573,13 @@ class MarkovIBL(MarkovState):
         prior_p = norm.logpdf(p_parameter, 0, 10)
 
         # Posterior log-likelihood
-        posterior_log_likelihood = log_likelihood + prior_alpha + prior_beta + prior_lambda + prior_p
+        prior_log_likelihood = prior_alpha + prior_beta + prior_lambda + prior_p
+        posterior_log_likelihood = log_likelihood + prior_log_likelihood
 
         if verbose:
-            print('>>> ESTIMATE LOG-LIKELIHOOD %s [SUBJECT: %s] <<<' % (model_name, df['subject_id'].unique()[0]))
+            print('>>> ESTIMATE LOG-LIKELIHOOD %s [SUBJECT: %s] <<<' % (self.kind, df['subject_id'].unique()[0]))
             print('>>> PARAMETERS: %s <<<\n' % str(self.task_parameters))
-            print('\t...Log-Likelihood = [%.2f]' % (log_likelihood))
+            print('\t...Log-Likelihood = prior [%.2f] + LL [%.2f] = [%.2f]' % (prior_log_likelihood, log_likelihood, posterior_log_likelihood))
         return log_likelihood
 
     def estimate_mod_coef_(self):
@@ -1958,9 +1989,9 @@ class MarkovEstimation():
         assert (self.data is not None)
         # define parameters
         param_dict = dict(zip(PARAMETER_NAMES, param_values))
-        a = MarkovIBL(verbose=False)
+        a = MarkovIBL(verbose=False, model=self.kind)
 
-        LL = a.estimate_log_likelihood(df=self.data, verbose=self.verbose, model_name=self.kind,  **param_dict)
+        LL = a.estimate_log_likelihood(df=self.data, verbose=self.verbose, **param_dict)
         return -1 * LL
 
 
@@ -2001,7 +2032,7 @@ class MarkovEstimation():
         :return: a dataframe of all model MaxLL
         """
         est = MarkovEstimation(subject_dir=subject_dir, model_name=estimate_model, subject_id=subject_id, verbose=verbose)
-        res = MarkovEstimation.optimization_function(df=est.data, x0=est.param_inits, param_bounds=est.param_bounds)
+        res = MarkovEstimation.optimization_function(df=est.data,  estimate_model=estimate_model, x0=est.param_inits, param_bounds=est.param_bounds)
 
         dfp = pd.DataFrame(
             {**dict(zip(est.param_names, res['x'])),
