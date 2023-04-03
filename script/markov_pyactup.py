@@ -1157,6 +1157,9 @@ class MarkovIBL(MarkovState):
     # =================================================== #
 
     def update_q(self, s, s_, a, a_, r):
+        """
+        Update Q table and P table (transition matrix) based on RL algorithms
+        """
         if self.kind.endswith('mf'):
             q = self.update_q_model_free(s, s_, a, a_, r)
         elif self.kind.endswith('mb'):
@@ -1170,6 +1173,10 @@ class MarkovIBL(MarkovState):
         else:
             print('Error model name', self.kind)
             pass
+
+        self.q = q.copy()
+        self.markov_state._q = q.copy()
+        self.markov_state._p = self.p.copy()
 
     def update_q_model_free(self, s, s_, a, a_, r):
         """
@@ -1193,8 +1200,8 @@ class MarkovIBL(MarkovState):
         # Update the Q value for the first stage
         q[(s, a)] += self.alpha * self.lambda_parameter * pred_error1
 
-        self.q = q.copy()
-        self.markov_state.q = q.copy()
+        # self.q = q.copy()
+        # self.markov_state.q = q.copy()
         return q
 
     def update_q_model_based(self, s, s_, a, a_, r):
@@ -1222,8 +1229,8 @@ class MarkovIBL(MarkovState):
         # Update the Q value for the first stage
         q[(s, a)] += self.alpha * self.lambda_parameter * (expected_future_reward - q[(s, a)])
 
-        self.q = q.copy()
-        self.markov_state.q = q.copy()
+        # self.q = q.copy()
+        # self.markov_state.q = q.copy()
         return q
 
     def update_q_hybrid(self, s, s_, a, a_, r, w):
@@ -1245,8 +1252,8 @@ class MarkovIBL(MarkovState):
         for key in q_mf:
             q_hybrid[key] = (1 - w) * q_mf[key] + w * q_mb[key]
 
-        self.q = q_hybrid.copy()
-        self.markov_state.q = q_hybrid.copy()
+        # self.q = q_hybrid.copy()
+        # self.markov_state.q = q_hybrid.copy()
         return q_hybrid
 
 
@@ -1842,7 +1849,7 @@ class MarkovEstimation():
 
         elif self.kind == 'markov-ibl-mb':
             # exclude latency parameter
-            exclude = ['w_parameter','p_parameter', 'lf', 'fixed_cost']
+            exclude = ['w_parameter','p_parameter']
         elif self.kind == 'markov-ibl-hybrid':
             exclude = ['p_parameter', 'lf', 'fixed_cost']
         else:
@@ -2182,7 +2189,7 @@ class MarkovPlot(Plot):
                            palette='Reds',
                            order=['reward', 'non-reward'])
         ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
-        sns.move_legend(ax, "upper right", ncol=2, title=param_name, frameon=False)
+        sns.move_legend(ax, "best", ncol=2, title=param_name, frameon=False, bbox_to_anchor=(1,1))
         plt.tight_layout()
 
     @staticmethod
@@ -2192,16 +2199,16 @@ class MarkovPlot(Plot):
         if combination:
             MarkovPlot.plot_param_effect_rt_comb(df, model_name, param_name)
             return
-        g = sns.FacetGrid(df, col=param_name, col_wrap=3)
-        g.map_dataframe(sns.barplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
-                        errorbar='se',
-                        palette=Plot.PALETTE,
-                        order=['common', 'rare'])
+        g = sns.FacetGrid(df, col=param_name, sharey=False, col_wrap=3)
+        # g.map_dataframe(sns.barplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
+        #                 errorbar='se',
+        #                 palette=Plot.PALETTE,
+        #                 order=['common', 'rare'])
         g.map_dataframe(sns.pointplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
-                        errorbar='sd', color='black',
+                        errorbar='se', color='black',
                         order=['common', 'rare'])
         g.add_legend()
-        g.refline(y=1.09)
+        # g.refline(y=1.09)
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
         g.fig.suptitle('RT Effect of parameter [%s] on [%s]' % (param_name, model_name))
