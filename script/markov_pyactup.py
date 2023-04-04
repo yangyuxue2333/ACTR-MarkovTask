@@ -995,8 +995,11 @@ class MarkovIBL(MarkovState):
 
         # evaluate max Q of s_
         # transition_matrix = self.p.copy() # use default 0.7/0.3
-        transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more noisy
-        self.p = transition_matrix.copy()
+        try:
+            transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more noisy
+            self.p = transition_matrix.copy()
+        except:
+            pass
 
         # calculate MB q_values
         q_values = [(2 * transition_matrix[('A', self.action_space[0], s1_)] - 1) * (s1_value - s2_value),
