@@ -2347,7 +2347,7 @@ class MarkovPlot(Plot):
     @staticmethod
     def plot_transition_probability(p_table):
         """
-        Plot the estimated transition probability by different parameters
+        Plot the estimated transition probability
         """
         g = sns.FacetGrid(p_table, col='temperature', row='decay')
         g.map_dataframe(sns.lineplot, x='index_bin', y='probability', hue='state_transition', markers=True, dashes=True)
