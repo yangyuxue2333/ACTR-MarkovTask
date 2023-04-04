@@ -1796,6 +1796,35 @@ class MarkovSimulation():
                                                   save_output=d3,
                                                   verbose=verbose)
 
+    @staticmethod
+    def simulate_transition_probability(param_id='', epoch=1, save_output=False, verbose=False, **params):
+        """
+
+        """
+        p_tables = []
+        for e in range(epoch):
+            m = MarkovSimulation.run_single_simulation(model='markov-ibl-mb', verbose=False, **params)
+
+            p_table = pd.DataFrame([s._p for s in m.log], index=range(len(m.log)))
+            p_table['index'] = p_table.index
+            p_table['index_bin'] = pd.cut(p_table.index, 20, labels=False, ordered=False, right=False)
+            p_table = p_table.melt(id_vars=['index', 'index_bin'], var_name='state_transition',
+                                   value_name='probability')
+            p_table['temperature'] = m.task_parameters['temperature']
+            p_table['decay'] = m.task_parameters['decay']
+            p_table['epoch'] = e
+            p_table['param_id'] = param_id
+
+            p_tables.append(p_table)
+
+        df = pd.concat(p_tables, axis=0)
+        if save_output:
+            # df_agg = df.groupby(['index_bin', 'state_transition', 'temperature','decay'])['probability'].mean().reset_index()
+            if verbose: print('... SAVE AGG P TABLE [%s]' % (param_id))
+            f = os.path.join(save_output, 'transition_probability-param%02d-sim.csv' % (param_id))
+            df.to_csv(f)
+        return df
+
 
 class MarkovEstimation():
     def __init__(self, model_name='markov-rl-mf', subject_dir=None, subject_id=None, drop_first_9=False, verbose=False):
@@ -2315,3 +2344,18 @@ class MarkovPlot(Plot):
             sig = '***'
         return sig
 
+    @staticmethod
+    def plot_transition_probability(p_table):
+        """
+        Plot the estimated transition probability by different parameters
+        """
+        g = sns.FacetGrid(p_table, col='temperature', row='decay')
+        g.map_dataframe(sns.lineplot, x='index_bin', y='probability', hue='state_transition', markers=True, dashes=True)
+        g.refline(y=0.7)
+        g.refline(y=0.3)
+
+        g.add_legend()
+        g.tight_layout()
+        g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
+        g.fig.suptitle('IBL-MB transition probability')
+        plt.show()

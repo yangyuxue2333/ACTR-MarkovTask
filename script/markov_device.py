@@ -406,7 +406,6 @@ class MarkovACTR(MarkovState):
               task_params=None,
               reload=True,
               verbose=False):
-        # TODO: add function to modify parameter set
         self.model = model
         self.verbose = verbose
 
