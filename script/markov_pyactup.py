@@ -1978,6 +1978,7 @@ class MarkovEstimation():
             params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
             return d, params
         else:
+            df = df.drop(columns='init')
             return df
 
     @staticmethod
@@ -2309,6 +2310,24 @@ class MarkovPlot(Plot):
         ax.set_ylim(0, 1.1)
         ax.legend().remove()
         plt.show()
+
+    @staticmethod
+    def plot_response_time(df, model_name, dep_var_suffix='', barplot=True):
+        # assert set(Plot.PLOT_FACTOR_VAR + ['response_time' + dep_var_suffix]).issubset(set(df.columns))
+
+        df['response_time'+dep_var_suffix] = df.apply(lambda x: x['state1_response_time'+dep_var_suffix] + x['state2_response_time'+dep_var_suffix], axis=1)
+
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
+        fig.suptitle('Summary: Response Time \n[%s]' % (model_name))
+        # pointplot
+        if barplot:
+            sns.barplot(data=df, x=Plot.TRANS_FACTOR, y='response_time'+dep_var_suffix,
+                          errorbar='se', hue=Plot.TRANS_FACTOR, palette='Set1', dodge=False,
+                          order=['common', 'rare'], ax=ax)
+        else:
+            sns.pointplot(data=df, x=Plot.TRANS_FACTOR, y='response_time'+dep_var_suffix,
+                          errorbar='se', color='black', #hue=Plot.TRANS_FACTOR, palette='Set1', dodge=False,
+                          order=['common', 'rare'], ax=ax)
 
     @staticmethod
     def parameter_lm_plot(df, x_name, y_name, exclude_parameters=None, alpha=.1):
