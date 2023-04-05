@@ -999,7 +999,7 @@ class MarkovIBL(MarkovState):
             transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more noisy
             self.p = transition_matrix.copy()
         except:
-            pass
+            transition_matrix = self.p.copy()
 
         # calculate MB q_values
         q_values = [(2 * transition_matrix[('A', self.action_space[0], s1_)] - 1) * (s1_value - s2_value),
@@ -1732,7 +1732,7 @@ class MarkovSimulation():
         return dff
 
     @staticmethod
-    def simulate_param_recovery(pr_dir, verbose=False):
+    def simulate_param_recovery(pr_dir, load_opt=False, verbose=False):
         """
         Run parameter recovery anlaysis
         :param df_opt:
@@ -1748,33 +1748,46 @@ class MarkovSimulation():
         d2 = os.path.join(pr_dir, 'fake_subject')
         d3 = os.path.join(pr_dir, 'opt_recovered')
 
-        if not os.path.exists(d1):
+        if not os.path.exists(d3):
             print('CREATE DIR...')
             os.makedirs(d1, exist_ok=True)
             os.makedirs(d2, exist_ok=True)
             os.makedirs(d3, exist_ok=True)
 
         # start run original optimization
-        if len(os.listdir(d1)) < len(subject_ids)*len(estimate_models):
-            if verbose: print('START OPT ORI...')
+        if load_opt:
+            dfo = MarkovEstimation.load_optimization_data(opt_dir=load_opt, estimate_models=estimate_models, long_format=False, only_maxLL=True)
+            for i, row in dfo.iterrows():
+                subject_id = row['subject_id']
+                estimate_model = row['estimate_model']
+                df = pd.DataFrame(row).T
+                df.to_csv(os.path.join(d1, 'sub%d-%s-opt-result.csv' % (subject_id, estimate_model)))
+            if verbose: print('...COPY OPT ORI FROM [%s]...' % (load_opt))
 
+        if len(glob.glob(os.path.join(d1, '*')))  < len(subject_ids) * len(estimate_models):
+            if verbose: print('\n...START OPT ORI...\n')
             # start optimization
             for subject_id in subject_ids:
                 for estimate_model in estimate_models:
-                        MarkovEstimation.try_estimate(subject_dir=None, # default
-                                                      subject_id=subject_id,
-                                                      estimate_model=estimate_model,
-                                                      save_output=d1,
-                                                      verbose=verbose)
+                    MarkovEstimation.try_estimate(subject_dir=None, # default
+                                                  subject_id=subject_id,
+                                                  estimate_model=estimate_model,
+                                                  save_output=d1,
+                                                  verbose=verbose)
+        else:
+            print('...SKIP ORI OPT...')
 
         # start run single simulation
-        if len(os.listdir(d2)) < len(subject_ids):
-            if verbose: print('START SINGLE RUN SIMULATION...')
-            df_opt = MarkovEstimation.load_optimization_data(opt_dir=d1, estimate_models=['markov-ibl-hybrid'], only_maxLL=True)
-            for i, row in df_opt.iterrows():
+        if len(glob.glob(os.path.join(d2, '*', '*'))) < len(subject_ids):
+            if verbose: print('\n...START SINGLE RUN SIMULATION...\n')
+            dfo = MarkovEstimation.load_optimization_data(opt_dir=d1,
+                                                          estimate_models=estimate_models,
+                                                          long_format=False,
+                                                          only_maxLL=True)
+            for i, row in dfo.iterrows():
                 d = dict(row)
-                estimate_model = d['estimate_model']
-                subject_id = d['subject_id']
+                estimate_model = row['estimate_model']
+                subject_id = row['subject_id']
                 params = {key: d[key] for key in PARAMETER_NAMES}
 
                 # run single simulation
@@ -1783,21 +1796,27 @@ class MarkovSimulation():
                 df_fake['subject_id']='sub%d' % subject_id
 
                 # save data
-                os.makedirs(os.path.join(d2, 'sub%d' % (subject_id)), exist_ok=True)
-                df_fake.to_csv(os.path.join(d2, 'sub%d' % (subject_id), 'test.csv'))
+                fake_dir = os.path.join(d2, estimate_model, 'sub%d' % (subject_id))
+                if not os.path.exists(fake_dir):
+                    os.makedirs(fake_dir, exist_ok=True)
+                df_fake.to_csv(os.path.join(fake_dir, 'test.csv'))
+                if verbose: print('... SAVE M[%s] SUB[%s] ...' % (estimate_model, subject_id))
+        else:
+            print('...SKIP SINGLE RUN SIM...')
 
         # start run recovered optimization
-        if len(os.listdir(d3)) < len(subject_ids)*len(estimate_models):
+        if len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids):
             if verbose: print('START OPT REC...')
 
             # start optimization
-            for subject_id in subject_ids:
-                for estimate_model in estimate_models:
-                    MarkovEstimation.try_estimate(subject_dir=d2,
-                                                  subject_id=subject_id,
-                                                  estimate_model=estimate_model,
-                                                  save_output=d3,
-                                                  verbose=verbose)
+            for ori_model in estimate_models:
+                for subject_id in subject_ids:
+                    for rec_model in estimate_models:
+                        MarkovEstimation.try_estimate(subject_dir=os.path.join(d2, ori_model),
+                                                      subject_id=subject_id,
+                                                      estimate_model=rec_model,
+                                                      save_output=os.path.join(d3, rec_model),
+                                                      verbose=verbose)
 
     @staticmethod
     def simulate_transition_probability(param_id='', epoch=1, save_output=False, verbose=False, **params):
@@ -1972,7 +1991,9 @@ class MarkovEstimation():
         if not os.path.exists(f):
             if verbose: print('Cannot find file')
             return
-        df = pd.read_csv(f).drop(columns='init')
+        df = pd.read_csv(f)
+        cols = [c for c in df.columns if c not in ['init']]
+        df = df[cols]
         d = df.loc[df['maxLL'].idxmax()].to_dict()
         params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
         return d, params, df
@@ -1997,12 +2018,10 @@ class MarkovEstimation():
             for estimate_model in estimate_models:
                 try:
                     d, params, df = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i), estimate_model=estimate_model)
-                    if only_maxLL:
-                        df = pd.Series(d)
-                        ls.append(df)
+                    df = pd.Series(d) if only_maxLL else pd.DataFrame(df)
+                    ls.append(df)
                 except:
                     continue
-
         df = pd.DataFrame(ls) if only_maxLL else pd.concat(ls, axis=0)
         if long_format: df = df.melt(id_vars=['subject_id', 'estimate_model'], var_name='param_name', value_name='param_value')
         return df
@@ -2084,6 +2103,9 @@ class MarkovEstimation():
 
         # define dest path
         dest_file = os.path.join(save_output, 'sub%s-%s-opt-result.csv' % (subject_id, estimate_model))
+
+        if not os.path.exists(save_output):
+            os.makedirs(save_output, exist_ok=True)
 
         # append optimization if exist
         if os.path.exists(dest_file):
