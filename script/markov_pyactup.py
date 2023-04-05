@@ -1770,7 +1770,7 @@ class MarkovSimulation():
         # start run single simulation
         if len(os.listdir(d2)) < len(subject_ids):
             if verbose: print('START SINGLE RUN SIMULATION...')
-            df_opt = MarkovEstimation.load_optimization_data(opt_dir=d1, estimate_models=['markov-ibl-hybrid'])
+            df_opt = MarkovEstimation.load_optimization_data(opt_dir=d1, estimate_models=['markov-ibl-hybrid'], only_maxLL=True)
             for i, row in df_opt.iterrows():
                 d = dict(row)
                 estimate_model = d['estimate_model']
@@ -1944,7 +1944,7 @@ class MarkovEstimation():
             return df
 
     @staticmethod
-    def load_opt_parameters(opt_dir, subject_id, estimate_model, only_maxLL=True, verbose=False):
+    def load_opt_parameters(opt_dir, subject_id, estimate_model, verbose=False):
         """
         Load optimized parameter data
         :param opt_dir: os.path.join(main_dir, 'data', 'model', 'param_optimization')
@@ -1972,14 +1972,10 @@ class MarkovEstimation():
         if not os.path.exists(f):
             if verbose: print('Cannot find file')
             return
-        df = pd.read_csv(f)
-        if only_maxLL:
-            d = df.loc[df['maxLL'].idxmax()].to_dict()
-            params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
-            return d, params
-        else:
-            df = df.drop(columns='init')
-            return df
+        df = pd.read_csv(f).drop(columns='init')
+        d = df.loc[df['maxLL'].idxmax()].to_dict()
+        params = dict([(k, v) for k, v in d.items() if k in RL_PARAMETER_NAMES])
+        return d, params, df
 
     @staticmethod
     def load_optimization_data(opt_dir, estimate_models=None, long_format=False, only_maxLL=False):
@@ -2000,22 +1996,15 @@ class MarkovEstimation():
         for i in np.arange(1, 152):
             for estimate_model in estimate_models:
                 try:
+                    d, params, df = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i), estimate_model=estimate_model)
                     if only_maxLL:
-                        d, _ = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i),
-                                                                    estimate_model=estimate_model, only_maxLL=True)
                         df = pd.Series(d)
-                    else:
-                        df = MarkovEstimation.load_opt_parameters(opt_dir=opt_dir, subject_id=str(i),
-                                                                  estimate_model=estimate_model, only_maxLL=False)
-                    ls.append(df)
+                        ls.append(df)
                 except:
-                    print('Unable to find SUB - %s' % i)
-        if only_maxLL:
-            df = pd.DataFrame(ls)
-        else:
-            df = pd.concat(ls, axis=0)
-        if long_format:
-            df = df.melt(id_vars=['subject_id', 'estimate_model'], var_name='param_name', value_name='param_value')
+                    continue
+
+        df = pd.DataFrame(ls) if only_maxLL else pd.concat(ls, axis=0)
+        if long_format: df = df.melt(id_vars=['subject_id', 'estimate_model'], var_name='param_name', value_name='param_value')
         return df
 
     @staticmethod
