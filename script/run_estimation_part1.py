@@ -17,7 +17,7 @@ subject_dir = os.path.join(main_dir, 'data', 'human', 'online_data')
 
 # define subject and models
 subject_ids = [str(i) for i in np.arange(1, 152)]
-subject_ids = np.array_split(subject_ids, 5)[4][::-1] # divide into 5 split
+subject_ids = np.array_split(subject_ids, 5)[0][::-1] # divide into 5 split
 estimate_models = ['markov-rl-mf', 'markov-rl-mb', 'markov-rl-hybrid', 'markov-ibl-mb', 'markov-ibl-hybrid']
 estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
 
@@ -27,7 +27,7 @@ dir_date = '0403'
 
 if TEST:
     epoch = 5
-    subject_ids = ['1', '2']
+    subject_ids = [1,2]
     estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
     dir_date = 'test'
 

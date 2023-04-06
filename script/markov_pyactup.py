@@ -994,12 +994,12 @@ class MarkovIBL(MarkovState):
         s2_value = max([q[(s2_, a)] for a in self.action_space])
 
         # evaluate max Q of s_
-        # transition_matrix = self.p.copy() # use default 0.7/0.3
+        transition_matrix = self.p.copy() # use default 0.7/0.3
         try:
             transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more noisy
             self.p = transition_matrix.copy()
         except:
-            transition_matrix = self.p.copy()
+            pass
 
         # calculate MB q_values
         q_values = [(2 * transition_matrix[('A', self.action_space[0], s1_)] - 1) * (s1_value - s2_value),
@@ -1732,17 +1732,14 @@ class MarkovSimulation():
         return dff
 
     @staticmethod
-    def simulate_param_recovery(pr_dir, load_opt=False, verbose=False):
+    def simulate_param_recovery(pr_dir, subject_ids=None, estimate_models=None, load_opt=False, verbose=False, overwrite=False):
         """
         Run parameter recovery anlaysis
-        :param df_opt:
-        :param des_dir:
-        :return:
         """
-        # define subject and models
-        subject_ids = [str(i) for i in np.arange(1, 152)]
-        # subject_ids = np.array_split(subject_ids, 5)[0]  # divide into 5 split
-        estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
+        if subject_ids is None:
+            subject_ids = [str(i) for i in np.arange(1, 152)]
+        if estimate_models is None:
+            estimate_models = ['markov-rl-hybrid', 'markov-ibl-hybrid']
 
         d1 = os.path.join(pr_dir, 'opt_original')
         d2 = os.path.join(pr_dir, 'fake_subject')
@@ -1757,14 +1754,19 @@ class MarkovSimulation():
         # start run original optimization
         if load_opt:
             dfo = MarkovEstimation.load_optimization_data(opt_dir=load_opt, estimate_models=estimate_models, long_format=False, only_maxLL=True)
+            dfo = dfo[dfo['subject_id'].isin(subject_ids)]
             for i, row in dfo.iterrows():
                 subject_id = row['subject_id']
                 estimate_model = row['estimate_model']
                 df = pd.DataFrame(row).T
-                df.to_csv(os.path.join(d1, 'sub%d-%s-opt-result.csv' % (subject_id, estimate_model)))
-            if verbose: print('...COPY OPT ORI FROM [%s]...' % (load_opt))
 
-        if len(glob.glob(os.path.join(d1, '*')))  < len(subject_ids) * len(estimate_models):
+                # save original optimization
+                f = os.path.join(d1, 'sub%d-%s-opt-result.csv' % (subject_id, estimate_model))
+                if overwrite or (not os.path.exists(f)):
+                    df.to_csv(f)
+                    if verbose: print('...COPY OPT ORI FROM [%s]...' % (load_opt))
+
+        elif overwrite:
             if verbose: print('\n...START OPT ORI...\n')
             # start optimization
             for subject_id in subject_ids:
@@ -1774,16 +1776,19 @@ class MarkovSimulation():
                                                   estimate_model=estimate_model,
                                                   save_output=d1,
                                                   verbose=verbose)
+                    if verbose: print('...RUN ORI OPT...[%s]' % subject_id)
         else:
-            print('...SKIP ORI OPT...')
+            if verbose: print('...SKIP ORI OPT...')
 
         # start run single simulation
-        if len(glob.glob(os.path.join(d2, '*', '*'))) < len(subject_ids):
+        if overwrite or (len(glob.glob(os.path.join(d2, '*', '*'))) < len(subject_ids) * len(estimate_models)):
             if verbose: print('\n...START SINGLE RUN SIMULATION...\n')
             dfo = MarkovEstimation.load_optimization_data(opt_dir=d1,
                                                           estimate_models=estimate_models,
                                                           long_format=False,
                                                           only_maxLL=True)
+            dfo = dfo[dfo['subject_id'].isin(subject_ids)]
+
             for i, row in dfo.iterrows():
                 d = dict(row)
                 estimate_model = row['estimate_model']
@@ -1799,24 +1804,30 @@ class MarkovSimulation():
                 fake_dir = os.path.join(d2, estimate_model, 'sub%d' % (subject_id))
                 if not os.path.exists(fake_dir):
                     os.makedirs(fake_dir, exist_ok=True)
-                df_fake.to_csv(os.path.join(fake_dir, 'test.csv'))
-                if verbose: print('... SAVE M[%s] SUB[%s] ...' % (estimate_model, subject_id))
+
+                f = os.path.join(fake_dir, 'test.csv')
+                if (not os.path.exists(f)) or overwrite:
+                    df_fake.to_csv(f)
+                    if verbose: print('... SAVE M[%s] SUB[%s] ...' % (estimate_model, subject_id))
         else:
             print('...SKIP SINGLE RUN SIM...')
 
         # start run recovered optimization
-        if len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids):
+        if overwrite or (len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids) * len(estimate_models)):
             if verbose: print('START OPT REC...')
 
             # start optimization
             for ori_model in estimate_models:
                 for subject_id in subject_ids:
                     for rec_model in estimate_models:
-                        MarkovEstimation.try_estimate(subject_dir=os.path.join(d2, ori_model),
-                                                      subject_id=subject_id,
-                                                      estimate_model=rec_model,
-                                                      save_output=os.path.join(d3, rec_model),
-                                                      verbose=verbose)
+                        # skip if exists
+                        if (not os.path.exists(os.path.join(os.path.join(d3, rec_model), 'sub%s-%s-opt-result.csv' % (subject_id, rec_model)))) or overwrite:
+                            MarkovEstimation.try_estimate(subject_dir=os.path.join(d2, ori_model),
+                                                          subject_id=subject_id,
+                                                          estimate_model=rec_model,
+                                                          save_output=os.path.join(d3, rec_model),
+                                                          verbose=verbose)
+                            if verbose: print('SAVE OPT REC...SUB [%s] M[%s]' % (subject_id, rec_model))
 
     @staticmethod
     def simulate_transition_probability(param_id='', epoch=1, save_output=False, verbose=False, **params):
@@ -2073,7 +2084,7 @@ class MarkovEstimation():
         return res
 
     @staticmethod
-    def try_estimate(subject_dir=None, subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False):
+    def try_estimate(subject_dir=None, subject_id='1', estimate_model='markov-rl-mf', save_output=False, verbose=False, overwrite=False):
         """
         Try to estimate maxLL of a subject with a specific model
         According to Decker 2016,
@@ -2108,12 +2119,13 @@ class MarkovEstimation():
             os.makedirs(save_output, exist_ok=True)
 
         # append optimization if exist
-        if os.path.exists(dest_file):
-            mode = 'a'
-            header = False
-        else:
+        # overwrite if necessary
+        if overwrite or (not os.path.exists(dest_file)):
             mode = 'w'
             header = True
+        else:
+            mode = 'a'
+            header = False
         dfp.to_csv(dest_file, index=False, mode=mode, header=header)
         if verbose: print('... SAVED optimized parameter data ...[%s] [%s]' %(subject_id, estimate_model))
         return dfp
@@ -2357,7 +2369,7 @@ class MarkovPlot(Plot):
     @staticmethod
     def annotate(data, **kws):
         x, y = kws['x'], kws['y']
-        r, p = stats.pearsonr(data[x], data[y])
+        r, p = stats.spearmanr(data[x], data[y])
         ax = plt.gca()
         minx, miny, maxx, maxy = data[x].min(), data[y].min(), data[x].max(), data[y].max()
         ax.text(0.05, 0.05, 'r = %.2f (p=%.2g, %s)' % (r, p, MarkovPlot.sig(p)), transform=ax.transAxes)
