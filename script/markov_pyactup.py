@@ -1232,8 +1232,7 @@ class MarkovIBL(MarkovState):
         # Update the Q value for the first stage
         q[(s, a)] += self.alpha * self.lambda_parameter * (expected_future_reward - q[(s, a)])
 
-        # self.q = q.copy()
-        # self.markov_state.q = q.copy()
+        self.update_evc(q, s, s_, a, a_, r)
         return q
 
     def update_q_hybrid(self, s, s_, a, a_, r, w):
@@ -1255,9 +1254,26 @@ class MarkovIBL(MarkovState):
         for key in q_mf:
             q_hybrid[key] = (1 - w) * q_mf[key] + w * q_mb[key]
 
-        # self.q = q_hybrid.copy()
-        # self.markov_state.q = q_hybrid.copy()
+        self.update_evc(q_hybrid, s, s_, a, a_, r)
         return q_hybrid
+
+    def update_evc(self, q, s, s_, a, a_, r):
+        # expected value of control
+        c = {(s, a): 0 for s in self.state_space for a in self.action_space}
+        c[(s, a)] = 0.1 * self.markov_state.state1_response_time
+        c[(s_, a_)] = 0.1 * self.markov_state.state2_response_time
+
+        payoff = {(s, a): 0 for s in self.state_space for a in self.action_space}
+        payoff[(s, a)] = r
+        payoff[(s_, a_)] = r
+
+        evc = q.copy()
+        evc[(s, a)] = q[(s, a)] - c[(s, a)]
+        evc[(s_, a_)] = q[(s_, a_)] - c[(s_, a_)]
+
+        self.markov_state._c = c.copy()
+        self.markov_state._payoff = payoff.copy()
+        self.markov_state._evc = evc.copy()
 
 
     # =================================================== #
@@ -1858,6 +1874,64 @@ class MarkovSimulation():
             df.to_csv(f)
         return df
 
+    @staticmethod
+    def simulate_expected_value_control(model_name='markov-ibl-mb', param1='reward', param2='decay', epoch=1, num_steps=10):
+        """
+        Simulate EVC effect
+        """
+
+        def get_evc_simulation_data(model_name='markov-ibl-mb', epoch=1, aggregate=True, **params):
+            """
+            simulate evc and get data
+            """
+            df_list = []
+            for e in range(epoch):
+                m = MarkovSimulation.run_single_simulation(model=model_name, n=10, verbose=False, **params)
+                df_evc = pd.DataFrame([s._evc for s in m.log]).reset_index().melt(id_vars=['index'], var_name='control', value_name='evc')
+                df_r = pd.DataFrame([s._payoff for s in m.log]).reset_index().melt(id_vars=['index'], var_name='control', value_name='r')
+                df_q = pd.DataFrame([s._q for s in m.log]).reset_index().melt(id_vars=['index'], var_name='control', value_name='q')
+                df_cost = pd.DataFrame([s._c for s in m.log]).reset_index().melt(id_vars=['index'], var_name='control', value_name='cost')
+
+                import functools as ft
+                df = ft.reduce(lambda left, right: pd.merge(left, right, on=['index', 'control'], how='left'),
+                               [df_r, df_q, df_cost, df_evc])
+                df['epoch'] = e
+                df_list.append(df)
+
+            res = pd.concat(df_list, axis=0)
+            if aggregate:
+                res = res.groupby(['epoch', 'control']).mean().reset_index()
+            return res
+
+        def sigmoid(x, center=5, scale=1):
+            return 10 / (1 + np.exp(-scale * (x - center)))
+
+        param1_list = np.array([sigmoid(x, center=5, scale=1) for x in np.linspace(.1, 10, num_steps)]).round(2)
+        param2_list = np.linspace(0.1, 1.5, num=num_steps, endpoint=False).round(2)
+
+        # reward_params = np.linspace(0.1, 10, num=num_steps, endpoint=False).round(2)
+        params = list(zip(param1_list, param2_list))
+
+        df_list = []
+        for r, p2 in params:
+            params = {'REWARD': {'B1': (r, 0), 'B2': (r, 0), 'C1': (r, 0), 'C2': (r, 0)},
+                      'alpha': 0.5,
+                      'beta': 2,
+                      'lambda_parameter': .5,
+                      'p_parameter': 0,
+                      'w_parameter': .5,
+                      'temperature': 0.2,
+                      'decay': 0.5,
+                      'lf': 0.5,
+                      'fixed_cost': 0.0}
+            params[param2] = p2
+            df = get_evc_simulation_data(model_name=model_name, epoch=epoch, **params)
+            df[param1] = r
+            df[param2] = p2
+            df_list.append(df)
+        res = pd.concat(df_list, axis=0).drop(columns=['index']).melt(id_vars=['epoch', 'control', param1, param2])
+        return res
+
 
 class MarkovEstimation():
     def __init__(self, model_name='markov-rl-mf', subject_dir=None, subject_id=None, drop_first_9=False, verbose=False):
@@ -2403,4 +2477,41 @@ class MarkovPlot(Plot):
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
         g.fig.suptitle('IBL-MB transition probability')
+        plt.show()
+
+    @staticmethod
+    def plot_expected_value_control(df, x_name='decay', combine=False):
+        """
+        Plot the expected value of control
+        """
+        PALETTE = sns.color_palette(["#e74c3c", "#138d75", "#9b59b6"])
+        df_max = df[df['variable'] == 'evc'].groupby(['epoch', 'control']).agg(max_evc_id=('value', 'idxmax'),
+                                                                               max_evc=('value', 'max')).reset_index()
+        df_max['max_evc_control'] = df_max.apply(lambda x: df.iloc[x['max_evc_id']][x_name], axis=1)
+        opt_x_var = df_max.groupby('control')['max_evc_control'].mean().tolist()
+        opt_evc = df_max.groupby('control')['max_evc'].mean().tolist()
+
+        if combine:
+            fig, ax = plt.subplots()
+            fig.suptitle('Expected Value of Control')
+            ax = sns.lineplot(data=df, x=x_name, y='value', hue='variable',
+                              markers=True, dashes=True, marker='o',
+                              hue_order=['cost', 'q', 'evc'],
+                              palette=PALETTE)
+            ax.axvline(x=df_max['max_evc_control'].mean(), c='gray', linestyle='--')
+            plt.tight_layout()
+            plt.show()
+            return
+
+        g = sns.FacetGrid(data=df, col='control', col_wrap=2)
+        g.map_dataframe(sns.lineplot, x=x_name, y='value', hue='variable', markers=True, dashes=True, marker='o',
+                        hue_order=['cost', 'q', 'evc'], palette=PALETTE)
+        for i in range(len(g.axes.flat)):
+            g.axes.flat[i].axvline(x=opt_x_var[i], c='gray', linestyle='--')
+            # g.axes.flat[i].text(x=opt_x_var[i]*.5, y=opt_evc[i]*1.15, s='ECV=[%.2f]\n d=[%.2f]' % (opt_evc[i], opt_x_var[i]), ma='center')
+
+        g.add_legend()
+        g.tight_layout()
+        g.fig.subplots_adjust(top=0.9)
+        g.fig.suptitle('Expected Value of Control')
         plt.show()
