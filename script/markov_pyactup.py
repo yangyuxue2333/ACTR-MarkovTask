@@ -1769,6 +1769,7 @@ class MarkovSimulation():
 
         # start run original optimization
         if load_opt:
+            if verbose: print('...LOAD OPT...')
             dfo = MarkovEstimation.load_optimization_data(opt_dir=load_opt, estimate_models=estimate_models, long_format=False, only_maxLL=True)
             dfo = dfo[dfo['subject_id'].isin(subject_ids)]
             for i, row in dfo.iterrows():
@@ -1780,7 +1781,7 @@ class MarkovSimulation():
                 f = os.path.join(d1, 'sub%d-%s-opt-result.csv' % (subject_id, estimate_model))
                 if overwrite or (not os.path.exists(f)):
                     df.to_csv(f)
-                    if verbose: print('...COPY OPT ORI FROM [%s]...' % (load_opt))
+                    if verbose: print('...COPY SUB[%s] FROM [%s]...' % (subject_id, load_opt))
 
         elif overwrite:
             if verbose: print('\n...START OPT ORI...\n')
@@ -1792,7 +1793,7 @@ class MarkovSimulation():
                                                   estimate_model=estimate_model,
                                                   save_output=d1,
                                                   verbose=verbose)
-                    if verbose: print('...RUN ORI OPT...[%s]' % subject_id)
+                    if verbose: print('...RUN ORI OPT...SUB [%s]' % subject_id)
         else:
             if verbose: print('...SKIP ORI OPT...')
 
@@ -1826,24 +1827,27 @@ class MarkovSimulation():
                     df_fake.to_csv(f)
                     if verbose: print('... SAVE M[%s] SUB[%s] ...' % (estimate_model, subject_id))
         else:
-            print('...SKIP SINGLE RUN SIM...')
+            if verbose: print('...SKIP SINGLE RUN SIM...')
 
         # start run recovered optimization
-        if overwrite or (len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids) * len(estimate_models)):
+        if overwrite or (len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids) * len(estimate_models) * len(estimate_models)):
             if verbose: print('START OPT REC...')
 
             # start optimization
-            for ori_model in estimate_models:
-                for subject_id in subject_ids:
+            for subject_id in subject_ids:
+                for ori_model in estimate_models:
                     for rec_model in estimate_models:
                         # skip if exists
-                        if (not os.path.exists(os.path.join(os.path.join(d3, rec_model), 'sub%s-%s-opt-result.csv' % (subject_id, rec_model)))) or overwrite:
-                            MarkovEstimation.try_estimate(subject_dir=os.path.join(d2, ori_model),
-                                                          subject_id=subject_id,
-                                                          estimate_model=rec_model,
-                                                          save_output=os.path.join(d3, rec_model),
-                                                          verbose=verbose)
-                            if verbose: print('SAVE OPT REC...SUB [%s] M[%s]' % (subject_id, rec_model))
+                        # f = os.path.join(os.path.join(d3, ori_model), 'sub%s-%s-opt-result.csv' % (subject_id, rec_model))
+                        # if (not os.path.exists(os.path.join(os.path.join(d3, rec_model), 'sub%s-%s-opt-result.csv' % (subject_id, rec_model)))) or overwrite:
+                        MarkovEstimation.try_estimate(subject_dir=os.path.join(d2, ori_model),
+                                                      subject_id=subject_id,
+                                                      estimate_model=rec_model,
+                                                      save_output=os.path.join(d3, ori_model),
+                                                      verbose=verbose)
+                        if verbose: print('SAVE OPT REC...SUB [%s] M[%s]' % (subject_id, rec_model))
+        else:
+            if verbose: print('...SKIP OPT REC...')
 
     @staticmethod
     def simulate_transition_probability(param_id='', epoch=1, save_output=False, verbose=False, **params):
