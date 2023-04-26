@@ -1830,7 +1830,8 @@ class MarkovSimulation():
             if verbose: print('...SKIP SINGLE RUN SIM...')
 
         # start run recovered optimization
-        if overwrite or (len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids) * len(estimate_models) * len(estimate_models)):
+        #if overwrite or (len(glob.glob(os.path.join(d3, '*', '*'))) < len(subject_ids) * len(estimate_models) * len(estimate_models)):
+        if overwrite or True:
             if verbose: print('START OPT REC...')
 
             # start optimization
@@ -2291,11 +2292,28 @@ class MarkovPlot(Plot):
     """
     Inherit from Pot
     """
+    # Plot.FIG_WIDTH = Plot.FIG_WIDTH * 2
+    # Plot.FIT_HEIGHT = Plot.FIT_HEIGHT * 1.5
+
+    plt.style.use('ggplot')
+    sns.set_theme(style="white", rc={"axes.spines.right": True,
+                                     "axes.spines.top": True,
+                                     "axes.spines.bottom": True,
+                                     "axes.spines.left": True}, font_scale=1.2)
+
+    MODEL_NAME_CODES = {'markov-rl-mf':'RL MF Model',
+                        'markov-rl-mb':'RL MB Model',
+                        'markov-rl-hybrid':'RL Hybrid Model',
+                        'markov-ibl-mf': 'ACT-R MF Model',
+                        'markov-ibl-mb': 'ACT-R MB Model',
+                        'markov-ibl-hybrid':'ACT-R Hybrid Model'}
+
     @staticmethod
     def plot_param_effect(df, model_name, param_name, combination=False):
         if combination:
             MarkovPlot.plot_param_effect_comb(df, model_name, param_name)
             return
+
         g = sns.FacetGrid(df, col=param_name, col_wrap=4)
         g.map_dataframe(sns.pointplot, x=Plot.REWARD_FACTOR, y='state1_stay_mean',
                         hue=Plot.TRANS_FACTOR, errorbar='se',
@@ -2306,12 +2324,13 @@ class MarkovPlot(Plot):
         g.refline(y=.5)
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
-        g.fig.suptitle('PStay Effect of parameter [%s] on [%s]' % (param_name, model_name))
+        g.fig.suptitle('PStay Effect of parameter [%s] on [%s]' % (param_name, MarkovPlot.MODEL_NAME_CODES[model_name]))
 
     @staticmethod
     def plot_param_effect_comb(df, model_name, param_name):
+
         fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        fig.suptitle('Summary: PStay Effect of [%s] on [%s]' % (param_name, model_name))
+        fig.suptitle('%s: PStay Effect of [%s]' % (MarkovPlot.MODEL_NAME_CODES[model_name], param_name))
         ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
                            x=Plot.REWARD_FACTOR, y='state1_stay_mean',
                            hue=param_name,
@@ -2333,6 +2352,7 @@ class MarkovPlot(Plot):
         if combination:
             MarkovPlot.plot_param_effect_rt_comb(df, model_name, param_name)
             return
+
         g = sns.FacetGrid(df, col=param_name, sharey=False, col_wrap=3)
         # g.map_dataframe(sns.barplot, x=Plot.TRANS_FACTOR, y='response_time_mean',
         #                 errorbar='se',
@@ -2345,35 +2365,21 @@ class MarkovPlot(Plot):
         # g.refline(y=1.09)
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
-        g.fig.suptitle('RT Effect of parameter [%s] on [%s]' % (param_name, model_name))
+        g.fig.suptitle('RT Effect of parameter [%s] on [%s]' % (param_name, MarkovPlot.MODEL_NAME_CODES[model_name]))
 
     @staticmethod
     def plot_param_effect_rt_comb(df, model_name, param_name):
+
         fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        fig.suptitle('Summary: RT Effect of [%s] on [%s]' % (param_name, model_name))
+        fig.suptitle('%s: RT Effect of [%s]' % (MarkovPlot.MODEL_NAME_CODES[model_name], param_name))
         ax = sns.pointplot(data=df, x=Plot.TRANS_FACTOR, y='response_time_mean',
                            hue=param_name,
                            palette='Greys',
                            order=['common', 'rare'])
         plt.tight_layout()
-        # fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        # fig.suptitle('Summary: RT Effect of [%s] on [%s]' % (param_name, model_name))
-        # ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
-        #                    x=Plot.REWARD_FACTOR, y='response_time_mean',
-        #                    hue=param_name, #dodge=.1, se='se',
-        #                    palette='Blues',
-        #                    order=['reward', 'non-reward'])
-        # ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'rare'],
-        #                    x=Plot.REWARD_FACTOR, y='response_time_mean',
-        #                    hue=param_name, #dodge=.2,
-        #                    palette='Reds',
-        #                    order=['reward', 'non-reward'])
-        # ax.axhline(1.09, color='grey', ls='-.', linewidth=.5)
-        # plt.tight_layout()
-
 
     @staticmethod
-    def plot_response_switch(df, model_name, dep_var_suffix='', barplot=True):
+    def plot_response_switch(df, model_name, dep_var_suffix='', title_suffix='', barplot=True):
         """
         Plot state1_stay by pre_received_reward and pre_state_frequency
         :param df:
@@ -2387,7 +2393,7 @@ class MarkovPlot(Plot):
             se = None
 
         fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        fig.suptitle('Summary: Stay Probability \n[%s]' % (model_name))
+        fig.suptitle('%s %s' % (MarkovPlot.MODEL_NAME_CODES[model_name], title_suffix))
         # pointplot
         if not barplot:
             sns.pointplot(data=df, x=Plot.REWARD_FACTOR, y='state1_stay' + dep_var_suffix,
@@ -2414,12 +2420,11 @@ class MarkovPlot(Plot):
 
     @staticmethod
     def plot_response_time(df, model_name, dep_var_suffix='', barplot=True):
-        # assert set(Plot.PLOT_FACTOR_VAR + ['response_time' + dep_var_suffix]).issubset(set(df.columns))
 
         df['response_time'+dep_var_suffix] = df.apply(lambda x: x['state1_response_time'+dep_var_suffix] + x['state2_response_time'+dep_var_suffix], axis=1)
 
         fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        fig.suptitle('Summary: Response Time \n[%s]' % (model_name))
+        fig.suptitle('%s: Response Time' % (MarkovPlot.MODEL_NAME_CODES[model_name]))
         # pointplot
         if barplot:
             sns.barplot(data=df, x=Plot.TRANS_FACTOR, y='response_time'+dep_var_suffix,
@@ -2435,7 +2440,7 @@ class MarkovPlot(Plot):
         if exclude_parameters:
             df = df[~df['param_name'].isin(exclude_parameters)]
         g = sns.lmplot(data=df, x=x_name, y=y_name,
-                       col="param_name", col_wrap=3, hue="param_name",
+                       col="param_name", col_wrap=2, hue="param_name",
                        height=3, aspect=1.2, palette='Set1',
                        scatter_kws={'alpha': alpha},
                        facet_kws=dict(sharex=False, sharey=False))
@@ -2472,7 +2477,7 @@ class MarkovPlot(Plot):
         """
         Plot the estimated transition probability
         """
-        g = sns.FacetGrid(p_table, col='temperature', row='decay')
+        g = sns.FacetGrid(p_table, height=5, aspect=1.2, col='temperature', row='decay')
         g.map_dataframe(sns.lineplot, x='index_bin', y='probability', hue='state_transition', markers=True, dashes=True)
         g.refline(y=0.7)
         g.refline(y=0.3)
@@ -2480,7 +2485,7 @@ class MarkovPlot(Plot):
         g.add_legend()
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
-        g.fig.suptitle('IBL-MB transition probability')
+        g.fig.suptitle('ACT-R Model: Estimated Transition Probability')
         plt.show()
 
     @staticmethod
