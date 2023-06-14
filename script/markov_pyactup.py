@@ -65,10 +65,10 @@ COMMON_TRANS = {
 
 # parameter names
 RL_PARAMETER_NAMES = ['alpha', 'beta', 'lambda_parameter', 'p_parameter']
-IBL_PARAMETER_NAMES = ['temperature', 'decay']
+IBL_PARAMETER_NAMES = ['temperature', 'decay', 'n_sampling']
 RT_PARAMETER_NAMES = ['lf', 'fixed_cost']
 
-PARAMETER_NAMES = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
+PARAMETER_NAMES = ['alpha', 'beta', 'lambda_parameter', 'p_parameter', 'w_parameter', 'temperature', 'decay', 'lf', 'fixed_cost', 'n_sampling']
 TASK_PARAMETER_NAMES = ['MARKOV_PROBABILITY','REWARD_PROBABILITY', 'REWARD']
 
 # all model names
@@ -555,6 +555,9 @@ class MarkovIBL(MarkovState):
         self.lf = .63           # latency factor (F)
         self.fixed_cost = .585  # latency factor (F)
 
+        # Sampling rates
+        self.n_sampling = 20    # number of memory sampling
+
 
         # init task parameters
         reward_dict = REWARD_DICT
@@ -570,13 +573,14 @@ class MarkovIBL(MarkovState):
                                 # 'beta_mb' : self.beta_mb,     # exploration rate
                                 'lambda_parameter' : self.lambda_parameter,         # decay rate
                                 'p_parameter' : self.p_parameter,                   # decay rate
-                                'w_parameter' : self.w_parameter,                 # w = 0: pure MF
+                                'w_parameter' : self.w_parameter,                   # w = 0: pure MF
                                 # IBL Parameter
                                 'temperature' : self.temperature,       # temperature rate
-                                'decay' : self.decay,           # decay rate
+                                'decay' : self.decay,                   # decay rate
                                 # retrieval latency parameters
-                                'lf': self.lf,                          # latency factor (F)
-                                'fixed_cost': self.fixed_cost           # fixed cost for time retrieval
+                                'lf': self.lf,                              # latency factor (F)
+                                'fixed_cost': self.fixed_cost,              # fixed cost for time retrieval
+                                'n_sampling':self.n_sampling                # number of memory sampling
         }
 
     def update_parameters(self, **kwargs):
@@ -608,6 +612,7 @@ class MarkovIBL(MarkovState):
         # retrieval latency parameters
         self.lf = self.task_parameters['lf']
         self.fixed_cost = self.task_parameters['fixed_cost']
+        self.n_sampling = self.task_parameters['n_sampling']
 
         # update reward
         global REWARD_DICT
@@ -996,7 +1001,7 @@ class MarkovIBL(MarkovState):
         # evaluate max Q of s_
         transition_matrix = self.p.copy() # use default 0.7/0.3
         try:
-            transition_matrix = self.sampling_memory(n=20) # use memory sampling frequency, more noisy
+            transition_matrix = self.sampling_memory(n=self.n_sampling) # use memory sampling frequency, more noisy
             self.p = transition_matrix.copy()
         except:
             pass
@@ -1019,7 +1024,7 @@ class MarkovIBL(MarkovState):
         self.markov_state._state1_p = probabilities[self.action_space.index(response)]
         return self.markov_state._state1_p
 
-    def sampling_memory(self, n=10):
+    def sampling_memory(self, n=20):
         """
         Sampling memories to estimate probability
         :param n:
@@ -1029,7 +1034,7 @@ class MarkovIBL(MarkovState):
                              ('A', 'f', 'C'): 0,
                              ('A', 'k', 'B'): 0,
                              ('A', 'k', 'C'): 0}
-        samples = [self.memory.retrieve(rehearse=False, curr_state='A') for i in range(n)]
+        samples = [self.memory.retrieve(rehearse=False, curr_state='A') for i in range(int(n))]
         for a in self.action_space:
             states, counts = np.unique([m['next_state'] for m in samples if (m['response'] == a)], return_counts=True)
             freq = counts / sum(counts)
@@ -1693,7 +1698,7 @@ class MarkovSimulation():
         return res
 
     @staticmethod
-    def simulate_param_effect(model_name='markov-ibl-mb', param_name='temperature', e=5, save_output=False, overwrite=False):
+    def simulate_param_effect(model_name='markov-ibl-mb', param_name='temperature', e=5, num_steps=8, save_output=False, overwrite=False):
         """
         Simulate the effect of various parameter values
         :param model_name:
@@ -1724,10 +1729,12 @@ class MarkovSimulation():
                   'temperature': 0.2,
                   'decay': 0.5,
                   'lf': 0.5,
-                  'fixed_cost': 0.0}
+                  'fixed_cost': 0.0,
+                  'n_sampling': 20
+                  }
 
         lower, upper = dict(zip(est.param_names, est.param_bounds))[param_name]
-        param_values = np.linspace(lower, upper, num=8, endpoint=False).round(2)
+        param_values = np.linspace(lower, upper, num=num_steps, endpoint=False).round(2)
         df_list = []
         for v in param_values:
             # update parameter
@@ -1938,6 +1945,7 @@ class MarkovSimulation():
         return res
 
 
+
 class MarkovEstimation():
     def __init__(self, model_name='markov-rl-mf', subject_dir=None, subject_id=None, drop_first_9=False, verbose=False):
         self.kind = model_name
@@ -1965,7 +1973,8 @@ class MarkovEstimation():
                         'temperature':(0.01,2),
                         'decay':(0.01,1.5),
                         'lf':(0.01,1),
-                        'fixed_cost':(0,1)}
+                        'fixed_cost':(0,1),
+                        'n_sampling':(1,100)}
 
         param_zero_bounds = {'alpha':(0.5,0.5),
                              'beta':(2,2),
@@ -1977,13 +1986,14 @@ class MarkovEstimation():
                              'temperature':(0.2,0.2),
                              'decay':(0.5,0.5),
                              'lf':(0.5,0.5),
-                             'fixed_cost':(0,0)}
+                             'fixed_cost':(0,0),
+                             'n_sampling':(20,20)}
 
         if self.kind == 'markov-rl-mf':
-            exclude = ['w_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
+            exclude = ['w_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost', 'n_sampling']
 
         elif self.kind == 'markov-rl-mb':
-            exclude = ['w_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
+            exclude = ['w_parameter', 'p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost', 'n_sampling']
 
         elif self.kind == 'markov-rl-hybrid':
             exclude =  ['p_parameter', 'temperature', 'decay', 'lf', 'fixed_cost']
@@ -2309,9 +2319,9 @@ class MarkovPlot(Plot):
                         'markov-ibl-hybrid':'ACT-R Hybrid Model'}
 
     @staticmethod
-    def plot_param_effect(df, model_name, param_name, combination=False):
+    def plot_param_effect(df, model_name, param_name, combination=False, title=None):
         if combination:
-            MarkovPlot.plot_param_effect_comb(df, model_name, param_name)
+            MarkovPlot.plot_param_effect_comb(df, model_name, param_name, title)
             return
 
         g = sns.FacetGrid(df, col=param_name, col_wrap=4)
@@ -2320,17 +2330,20 @@ class MarkovPlot(Plot):
                         palette=Plot.PALETTE,
                         order=['reward', 'non-reward'],
                         hue_order=['common', 'rare'])
+        g.set_xlabels(label='Previous Trial Reward', clear_inner=True)
+        g.set_ylabels(label='Mean of Probability(Stay)', clear_inner=True)
         g.add_legend()
         g.refline(y=.5)
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
-        g.fig.suptitle('PStay Effect of parameter [%s] on [%s]' % (param_name, MarkovPlot.MODEL_NAME_CODES[model_name]))
+        g.fig.suptitle(title) if title else g.fig.suptitle('PStay Effect of parameter [%s] on [%s]' % (param_name, MarkovPlot.MODEL_NAME_CODES[model_name]))
+
 
     @staticmethod
-    def plot_param_effect_comb(df, model_name, param_name):
+    def plot_param_effect_comb(df, model_name, param_name, title):
 
-        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH, Plot.FIT_HEIGHT))
-        fig.suptitle('%s: PStay Effect of [%s]' % (MarkovPlot.MODEL_NAME_CODES[model_name], param_name))
+        fig, ax = plt.subplots(figsize=(Plot.FIG_WIDTH*1.2, Plot.FIT_HEIGHT))
+        fig.suptitle(title) if title else fig.suptitle('%s: PStay Effect of [%s]' % (MarkovPlot.MODEL_NAME_CODES[model_name], param_name))
         ax = sns.pointplot(data=df[df[Plot.TRANS_FACTOR] == 'common'],
                            x=Plot.REWARD_FACTOR, y='state1_stay_mean',
                            hue=param_name,
@@ -2341,6 +2354,8 @@ class MarkovPlot(Plot):
                            hue=param_name,
                            palette='Reds',
                            order=['reward', 'non-reward'])
+        ax.set_xlabel(xlabel='Previous Trial Reward')
+        ax.set_ylabel(ylabel='Mean of Probability(Stay)')
         ax.axhline(0.5, color='grey', ls='-.', linewidth=.5)
         sns.move_legend(ax, "best", ncol=2, title=param_name, frameon=False, bbox_to_anchor=(1,1))
         plt.tight_layout()
@@ -2436,17 +2451,18 @@ class MarkovPlot(Plot):
                           order=['common', 'rare'], ax=ax)
 
     @staticmethod
-    def parameter_lm_plot(df, x_name, y_name, exclude_parameters=None, alpha=.1):
+    def parameter_lm_plot(df, x_name, y_name, exclude_parameters=None, alpha=.1, title=None):
         if exclude_parameters:
             df = df[~df['param_name'].isin(exclude_parameters)]
         g = sns.lmplot(data=df, x=x_name, y=y_name,
-                       col="param_name", col_wrap=2, hue="param_name",
-                       height=3, aspect=1.2, palette='Set1',
+                       col="param_name", col_wrap=3, hue="param_name",
+                       height=5, aspect=1, palette='Set2',
                        scatter_kws={'alpha': alpha},
                        facet_kws=dict(sharex=False, sharey=False))
+        g.set_titles(col_template="{col_name}")
         g.map_dataframe(MarkovPlot.annotate, x=x_name, y=y_name)
-        g.fig.subplots_adjust(top=.9)  # adjust the Figure in rp
-        g.fig.suptitle('Correlation of optimizated parmeters [%s] vs. [%s]: ' % (x_name, y_name))
+        g.fig.subplots_adjust(top=.8)  # adjust the Figure in rp
+        g.fig.suptitle(title) if title else g.fig.suptitle('Correlation of optimized parameters between %s vs. %s: ' % (x_name, y_name))
         plt.show()
 
     @staticmethod
@@ -2477,15 +2493,19 @@ class MarkovPlot(Plot):
         """
         Plot the estimated transition probability
         """
-        g = sns.FacetGrid(p_table, height=5, aspect=1.2, col='temperature', row='decay')
-        g.map_dataframe(sns.lineplot, x='index_bin', y='probability', hue='state_transition', markers=True, dashes=True)
+        p_table['temperature'] = pd.cut(p_table['temperature'], 3, labels=['low', 'medium', 'high'])
+        p_table['decay'] = pd.cut(p_table['decay'], 3, labels=['low', 'medium', 'high'])
+
+        g = sns.FacetGrid(p_table, height=6, aspect=1.5, col='temperature', row='decay', xlim=(0, 20))
+        g.map_dataframe(sns.lineplot, x='index_bin', y='probability', hue='state_transition', markers=True, dashes=True, lw=6, palette='Set3')
+
         g.refline(y=0.7)
         g.refline(y=0.3)
 
         g.add_legend()
         g.tight_layout()
         g.fig.subplots_adjust(top=0.9)  # adjust the Figure in rp
-        g.fig.suptitle('ACT-R Model: Estimated Transition Probability')
+        g.fig.suptitle('ACT-R Model: The Effect of Memory on Sampling Transition Frequency')
         plt.show()
 
     @staticmethod
